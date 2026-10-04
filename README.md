@@ -24,10 +24,6 @@ The installer selects the latest build for Apple Silicon or Intel and installs i
 in `~/.local/bin`. No Go, Node.js, or GitHub CLI is needed. If that directory is not
 on your PATH, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
 
-While the repository is private, download `install.sh` from the release in your
-signed-in browser and run it with a `GITHUB_TOKEN` environment variable that has
-repository read access. The anonymous curl command works for public releases.
-
 Start BonBon:
 
 ```sh

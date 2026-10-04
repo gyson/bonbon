@@ -84,9 +84,9 @@ the installer and `bonbon update`. Each archive contains `bonbon`, `LICENSE`, an
 `THIRD_PARTY_NOTICES.txt`. The installer extracts only the executable; that binary
 also embeds all notices.
 The installer uses curl and macOS plutil, with no GitHub CLI dependency.
-Public downloads need no credentials. Private downloads accept a `GITHUB_TOKEN`
-environment variable. The token is passed to curl through stdin, not process
-arguments or a file.
+Downloads need no credentials. An optional `GITHUB_TOKEN` environment variable
+authenticates GitHub API requests. The token is passed to curl through stdin, not
+process arguments or a file.
 
 The POSIX shell installer supports macOS `arm64` and `x86_64`. It resolves the latest
 published full release once, then downloads the architecture archive and checksum

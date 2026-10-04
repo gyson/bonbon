@@ -9,7 +9,7 @@ usage() {
 Usage: sh install.sh [--version VERSION] [--dir DIRECTORY] [--check]
 
 Install BonBon for macOS using curl and the tools included with macOS.
-Optional: GITHUB_TOKEN supplies access to private GitHub releases.
+Optional: GITHUB_TOKEN authenticates GitHub API requests.
 
   --version VERSION  Install a specific release, such as 0.0.1 or v0.0.1.
                      Default: the latest published full release.
@@ -99,7 +99,7 @@ main() {
         release_path=releases/tags/v$requested
     fi
     fetch "$release_path" application/vnd.github+json "$metadata" ||
-        fail "cannot read release; check the version and access (private releases can use GITHUB_TOKEN)"
+        fail "cannot read release; check the version and GitHub access"
     tag=$(plutil -extract tag_name raw -o - "$metadata") || fail "invalid release metadata"
     if [ "$requested" != latest ]; then
         [ "$tag" = "v$requested" ] || fail "GitHub returned a different release than requested"

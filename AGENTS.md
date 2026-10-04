@@ -46,7 +46,7 @@ The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; G
   installer and checksums with the release assets. Include the project and dependency
   license notices in the archives and embedded binary. Use the patched Go version
   required by `go.mod`. The installer uses curl and built-in
-  macOS tools, with an optional token for private downloads; never require GitHub CLI.
+  macOS tools, with optional GitHub API authentication; never require GitHub CLI.
   Keep initial installation and `bonbon update` on the same embedded installer under
   `internal/install`. Updates replace the invoked executable and never restart sessions.
   Installer tests must use synthetic releases, and live install checks must use temporary installation and instance directories. See the
