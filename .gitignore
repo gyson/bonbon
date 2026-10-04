@@ -1,0 +1,9 @@
+.bonbon/
+*.sqlite*
+*.log
+.DS_Store
+coverage/
+bin/
+node_modules/
+/web/dist/
+/internal/webui/dist/

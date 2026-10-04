@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BonBon</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></div>
+    <button id="new-session" class="primary">＋ New session</button>
+    <label class="search-label"><span class="sr-only">Filter recent sessions</span><input id="filter" type="search" placeholder="Filter recent sessions…"></label>
+    <div class="section-heading"><span>RECENT SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
+    <nav id="sessions" aria-label="Sessions"><p class="muted">Connecting…</p></nav>
+    <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
+  </aside>
+  <main>
+    <header class="toolbar">
+      <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p></div>
+      <div class="actions"><span id="status" class="badge" hidden></span><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="stop" class="danger" disabled>Stop session</button></div>
+    </header>
+    <div id="notice" role="status" hidden></div>
+    <section id="welcome" class="welcome">
+      <span class="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
+      <h2>Your agents. One workspace.</h2>
+      <p>Start a terminal session or open one from the sidebar.<br>BonBon keeps recording while you’re away.</p>
+      <button id="welcome-new" class="primary">Start a session <span aria-hidden="true">↗</span></button>
+      <div class="welcome-notes"><div><strong>Stay connected</strong><p>Reopen a session or share it across browser tabs.</p></div><div><strong>Keep the history</strong><p>Return to recorded output even after a process ends.</p></div></div>
+    </section>
+    <section id="session-view" hidden>
+      <div class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
+      <div id="terminal" aria-label="Session terminal"></div>
+      <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span><button id="composer-toggle" aria-expanded="false" aria-controls="composer" disabled>Message editor</button></div>
+      <section id="composer" aria-label="Message editor" hidden>
+        <label for="composer-text">Compose a message</label>
+        <textarea id="composer-text" rows="4" placeholder="Write and edit here, then submit to the terminal…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
+        <div id="composer-files" aria-label="Attached files"></div>
+        <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Submit ↵</button></div>
+        <p id="composer-help">Enter adds a line. Submit pastes into the current terminal prompt and presses Enter. You can still type directly in the terminal. Paste or drop files here to send local file references.</p>
+      </section>
+    </section>
+  </main>
+  <dialog id="launch-dialog" aria-labelledby="launch-title">
+    <form id="launch-form">
+      <div class="dialog-heading"><div><span class="eyebrow">A FRESH START</span><h2 id="launch-title">New session</h2></div><button type="button" id="cancel-launch" class="text-button" aria-label="Close new session">✕</button></div>
+      <label>Session title <span class="optional">optional</span><input id="launch-name" placeholder="What are you working on?" maxlength="200"></label>
+      <label>Workspace<input id="launch-workspace" placeholder="~/projects/my-project or /absolute/path" required></label>
+      <p class="form-help">Opens an interactive shell in this workspace. Run Codex or any other command from there.</p>
+      <p id="launch-error" class="form-error" role="alert" hidden></p>
+      <button id="launch-submit" class="primary" type="submit">Start session</button>
+    </form>
+  </dialog>
+  <noscript>Enable JavaScript to use BonBon’s web UI.</noscript>
+</body>
+</html>
