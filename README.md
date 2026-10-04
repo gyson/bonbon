@@ -16,9 +16,6 @@ and its effect on processes and stored data.
 
 ## Install on macOS
 
-No prebuilt releases are published in this repository yet. Use [Build and run](#build-and-run)
-for now. The installer and update commands below require a published release.
-
 ```sh
 curl -fsSL https://github.com/gyson/bonbon/releases/latest/download/install.sh | sh
 ```
@@ -26,6 +23,10 @@ curl -fsSL https://github.com/gyson/bonbon/releases/latest/download/install.sh |
 The installer selects the latest build for Apple Silicon or Intel and installs it
 in `~/.local/bin`. No Go, Node.js, or GitHub CLI is needed. If that directory is not
 on your PATH, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration.
+
+While the repository is private, download `install.sh` from the release in your
+signed-in browser and run it with a `GITHUB_TOKEN` environment variable that has
+repository read access. The anonymous curl command works for public releases.
 
 Start BonBon:
 
@@ -44,7 +45,7 @@ Then run `bonbon server restart` when ready; restarting ends active sessions.
 
 ## Build and run
 
-Building requires Go 1.26+, Node.js 22+, and npm. The resulting binary includes the
+Building requires Go 1.27.1+, Node.js 22+, and npm. The resulting binary includes the
 web UI and terminal libraries; running it requires neither Node.js nor Go. To use an
 agent, install its CLI on PATH and sign in normally. Start the server before using
 `ui` or `query`.
@@ -225,6 +226,9 @@ logo assets, and dependency license notices, under `internal/webui/dist/`. Go em
 that directory. The shared logo source is `web/src/bonbon.svg`. The npm build uses
 `@resvg/resvg-js` to render its transparent menu bar PNG; no renderer or image files
 are needed alongside the final executable.
+The build also downloads the pinned Go modules and collects BonBon, Go, and dependency
+license notices into the embedded `/assets/licenses.txt` resource. They remain in the
+executable after installation and updates.
 Build output and `node_modules` are ignored by Git; commit sources and the npm
 lockfile only. There is no separate vendor-copy step.
 
@@ -335,9 +339,9 @@ npm --prefix web ci --ignore-scripts
 make test
 make check
 make web-check
-make release VERSION=0.0.3
-sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.3
-make release-assets VERSION=0.0.3
+make release VERSION=0.0.1
+sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.1
+make release-assets VERSION=0.0.1
 ```
 
 `make release` without `VERSION` reports `dev`; a release tag supplies `X.Y.Z`.
@@ -345,6 +349,8 @@ make release-assets VERSION=0.0.3
 with `CGO_ENABLED=0`. It writes two archives, `install.sh`, and `checksums.txt` to
 `bin/releases/vX.Y.Z/`. The output directory must not already exist. Generated
 assets stay ignored by Git. Frontend assets are built before packaging Go.
+Each archive includes the executable, `LICENSE`, and `THIRD_PARTY_NOTICES.txt`.
+Use the current patched Go version required by `go.mod` for release builds.
 The smoke check uses a temporary instance, disables the menu bar, checks the embedded
 UI and a read-only query, and stops the server before removing its temporary files.
 

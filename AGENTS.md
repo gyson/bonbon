@@ -25,9 +25,9 @@ and storage formats are allowed. Backward compatibility is not a requirement.
 - Write documentation in concise, plain English. Use short sentences and common words so non-native English speakers can understand it easily.
 - Inspect the current repository and working-tree changes before editing. Preserve unrelated work.
 
-The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; Go 1.26+). The product has a separate background server and embedded web UI. The server owns agent PTYs, headless terminal state, and history; the UI uses JSON over WebSocket. The CLI only opens the UI, manages the server, and queries history. HTTP also serves the UI and its connection information. Keep deployment builds compatible with `CGO_ENABLED=0`.
+The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; Go 1.27.1+). The product has a separate background server and embedded web UI. The server owns agent PTYs, headless terminal state, and history; the UI uses JSON over WebSocket. The CLI only opens the UI, manages the server, and queries history. HTTP also serves the UI and its connection information. Keep deployment builds compatible with `CGO_ENABLED=0`.
 
-- Prefer simple, standard tools. Building requires Go 1.26+, Node.js 22+, and npm; the resulting binary is self-contained.
+- Prefer simple, standard tools. Building requires Go 1.27.1+, Node.js 22+, and npm; the resulting binary is self-contained.
 - Keep frontend sources under `web/`, with strict TypeScript and CSS in `web/src`. Run `npm --prefix web ci --ignore-scripts` for setup. `make build` and `make release` build the frontend before Go; `make web-check` runs frontend fixtures. esbuild bundles npm dependencies into one JavaScript file and one CSS file under `internal/webui/dist`, which Go embeds. Never commit generated files or copied vendor assets; commit the npm lockfile. See the README for direct Go commands.
 - Keep the main logo and menu bar icon in sync through `web/src/bonbon.svg`. The
   frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit
@@ -43,7 +43,9 @@ The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; G
   Keep menu code in macOS-specific Go files and retain `CGO_ENABLED=0` builds.
 - Local builds use `~/.bonbon-dev`. `make release` produces `bin/release/bonbon`, which uses `~/.bonbon`. Each instance gets an automatically allocated loopback port. Keep development and production data separate by default. Tests must use temporary data directories.
 - Package tagged macOS releases with `make release-assets VERSION=X.Y.Z`. Keep the
-  installer and checksums with the release assets. The installer uses curl and built-in
+  installer and checksums with the release assets. Include the project and dependency
+  license notices in the archives and embedded binary. Use the patched Go version
+  required by `go.mod`. The installer uses curl and built-in
   macOS tools, with an optional token for private downloads; never require GitHub CLI.
   Keep initial installation and `bonbon update` on the same embedded installer under
   `internal/install`. Updates replace the invoked executable and never restart sessions.

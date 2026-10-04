@@ -150,6 +150,13 @@ func TestEmbeddedWebUI(t *testing.T) {
 		if path == "/assets/app.js" && (!strings.Contains(string(data), protocol.Version) || !strings.Contains(response.Header.Get("Content-Type"), "javascript")) {
 			t.Fatal("browser protocol or MIME type differs from server")
 		}
+		if path == "/assets/licenses.txt" {
+			for _, notice := range []string{"Copyright (c) 2026 yunsong", "@xterm/xterm", "The Gorilla WebSocket Authors", "The Go Authors", "The Ebitengine Authors", "Apache License"} {
+				if !strings.Contains(string(data), notice) {
+					t.Fatalf("embedded license notices omit %q", notice)
+				}
+			}
+		}
 		if path == "/client-config" {
 			var info protocol.ServerInfo
 			if json.Unmarshal(data, &info) != nil || info.Protocol != protocol.Version || info.Instance == "" {

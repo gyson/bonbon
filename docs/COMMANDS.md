@@ -120,9 +120,6 @@ to install or update BonBon.
 
 ## Update BonBon
 
-No releases are published in this repository yet, so updates are currently unavailable.
-Build from source using the [README](../README.md#build-and-run).
-
 ```sh
 bonbon update
 ```

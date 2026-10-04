@@ -7,7 +7,7 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
 ## Architecture and build
 
-- Go 1.26+ core with `github.com/creack/pty` and `golang.org/x/sys`.
+- Go 1.27.1+ core with `github.com/creack/pty` and `golang.org/x/sys`.
   `golang.org/x/term` is used only by synthetic test agents.
 - SQLite through the pure Go `github.com/ncruces/go-sqlite3` driver. No CGO in deployment builds.
 - Frontend sources live under `web/`, with strict TypeScript and CSS under `web/src`.
@@ -17,6 +17,10 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 - Generated assets live in `internal/webui/dist`, which Go embeds. This directory,
   test compiler output in `web/dist`, and npm dependencies are ignored by Git.
   The deployed binary needs neither Node.js nor external frontend files.
+- The build collects BonBon's license, the Go license, npm runtime licenses, and
+  license/notice files from the Go modules required by `go.mod`. It includes the
+  Apache-2.0 text referenced by goffi's attribution notice. These are embedded at
+  `/assets/licenses.txt`, so the installed standalone executable retains them.
 - On macOS, `github.com/gogpu/systray` v0.3.0 implements a menu bar companion.
   It uses Go FFI to load the built-in AppKit frameworks, without CGO. The server
   launches the same executable as a separate menu process; no `.app` bundle or
@@ -75,9 +79,10 @@ server. There is no bearer token or credential exchange. The server listens only
 
 ## Release installation
 
-Release packaging and installation are implemented, but this repository has no
-published releases. Build from source for now. The installer and `bonbon update`
-require versioned archives, checksums, and `install.sh` in GitHub Releases.
+GitHub Releases provide versioned macOS archives, checksums, and `install.sh` for
+the installer and `bonbon update`. Each archive contains `bonbon`, `LICENSE`, and
+`THIRD_PARTY_NOTICES.txt`. The installer extracts only the executable; that binary
+also embeds all notices.
 The installer uses curl and macOS plutil, with no GitHub CLI dependency.
 Public downloads need no credentials. Private downloads accept a `GITHUB_TOKEN`
 environment variable. The token is passed to curl through stdin, not process

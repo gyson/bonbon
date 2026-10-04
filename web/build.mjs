@@ -2,6 +2,7 @@ import { build } from 'esbuild';
 import { Resvg } from '@resvg/resvg-js';
 import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { licenseNotices } from './licenses.mjs';
 
 const output = new URL('../internal/webui/dist/', import.meta.url);
 await rm(output, { recursive: true, force: true });
@@ -25,6 +26,4 @@ await writeFile(new URL('assets/menubar.png', output),
 const favicon = logo.replace('<svg ', '<svg width="32" height="32" ').replace('</svg>',
   '<style>:root{color:#232a30}@media(prefers-color-scheme:dark){:root{color:#f5f5f2}}</style></svg>');
 await writeFile(new URL('assets/favicon.svg', output), favicon);
-const licenses = await Promise.all(['@xterm/xterm', '@xterm/addon-fit'].map(async name =>
-  `${name}\n\n${await readFile(new URL(`node_modules/${name}/LICENSE`, import.meta.url), 'utf8')}`));
-await writeFile(new URL('assets/licenses.txt', output), licenses.join('\n\n'));
+await writeFile(new URL('assets/licenses.txt', output), await licenseNotices());

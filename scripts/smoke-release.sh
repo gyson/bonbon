@@ -17,6 +17,11 @@ url=$(printf '%s\n' "$output" | grep -Eo 'http://127\.0\.0\.1:[0-9]+' | head -1)
 [ -n "$url" ]
 curl -fsS "$url/" > "$instance/index.html"
 grep -q '<title>BonBon</title>' "$instance/index.html"
+curl -fsS "$url/assets/licenses.txt" > "$instance/licenses.txt"
+grep -q 'Copyright (c) 2026 yunsong' "$instance/licenses.txt"
+grep -q 'The Gorilla WebSocket Authors' "$instance/licenses.txt"
+grep -q 'The Ebitengine Authors' "$instance/licenses.txt"
+grep -q 'Apache License' "$instance/licenses.txt"
 result=$("$binary" --dir "$instance" query 'SELECT 1 AS value')
 [ "$result" = '{"columns":["value"],"rows":[[1]],"truncated":false}' ]
 printf 'Release smoke check passed for %s\n' "$version"
