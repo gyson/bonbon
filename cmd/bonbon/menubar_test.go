@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"bonbon/internal/client"
+	"bonbon/internal/history"
 	"bonbon/internal/instance"
 )
 
@@ -79,7 +80,7 @@ func TestMenuQuitFinalizesActiveSession(t *testing.T) {
 		return strings.Contains(c.text(), "READY") && strings.HasPrefix(menuEvents(t, path), "start ")
 	})
 	store := archive(t, directory)
-	sessions, _ := store.RecentSessions(1)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1})
 	target := client.Target{Dir: directory}
 	info, err := target.Health()
 	if err != nil {

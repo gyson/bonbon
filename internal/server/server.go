@@ -187,8 +187,11 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Size)
 	case "session-list":
-		result, err := s.listSessions(request.Limit)
+		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
 		s.reply(conn, result, err)
+	case "session-archive":
+		err := s.archiveSession(request.Session, request.Archived)
+		s.reply(conn, map[string]bool{"archived": request.Archived}, err)
 	case "session-stop":
 		result, err := s.stopSession(request.Session)
 		s.reply(conn, result, err)

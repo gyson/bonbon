@@ -164,10 +164,11 @@ Health checks read the greeting and close without sending an operation.
 
 Session operations and health checks require the current protocol, with no version
 fallback. Shutdown uses the version verified above. The current version is
-`bonbon/14`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
+`bonbon/15`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
 Binary messages and invalid JSON are rejected. There is no extra length prefix.
-Protocol 14 uses project-owned drafts and tool selection from Settings. It removes
-direct session creation and per-session project, folder, and command overrides. SQLite format 5 adds settings, preparations, and worktree metadata.
+Protocol 15 creates independent project drafts and adds archive/restore, collection
+search, and pagination. SQLite format 6 adds a session archive flag. Settings, preparations,
+and worktree metadata remain server-owned.
 Older database formats are rejected; use a fresh instance directory. Reload the UI
 after starting the new server.
 
@@ -233,14 +234,31 @@ server requires a reload using its current URL. Assets and configuration disable
 Host checks apply to every route. A content security policy restricts scripts and network
 access to the local origin and blocks framing. Terminal libraries are served locally.
 
-The sidebar lists saved projects and groups the 100 most recently active sessions
-under them through `project-list` and `session-list`. General appears first; custom
-projects are sorted by name. Groups can be collapsed in each view. A text filter matches
-project names and paths, or session titles, workspaces, and IDs. The list refreshes every
-five seconds while visible. Unstarted drafts stay on their projects and do not consume
-the recent-session limit. Project names are plain text. The small arrow beside each
-name expands or collapses its group. Each project’s **＋** opens its draft.
-This is a recent-session view, not full-history pagination.
+The sidebar lists saved projects and groups sessions, including drafts, in pages of
+100 through `project-list` and `session-list`. General appears first; custom projects
+are sorted by name. Groups can be collapsed in each view. Server-side search matches
+project names and paths, or session titles, workspaces, and IDs, before pagination.
+It uses SQLite's case-insensitive ASCII matching and treats wildcard characters literally.
+Message and terminal contents are not searched by this UI. Previous and Next reach
+older results; each page reflects current activity, so changing activity can shift items
+between pages. The list refreshes every five seconds while visible.
+Project names are plain text. The small arrow expands or collapses a group.
+Each project's **＋** creates and selects a new draft entry; clicking an existing entry
+reopens it by session ID. The URL keeps that ID through reload and launch.
+
+**Archive** saves the current launch choices and message editor, then hides a draft or
+finished session from the normal list and returns to the welcome view. **Archived**
+provides the same search and pagination across all archived sessions. **Restore** returns
+an item to its project, or Standalone if that project was removed, without launching it.
+The archive flag is separate from draft/run status. Archiving preserves all SQLite
+records, draft revisions, attachments, workspace files, and worktree metadata.
+Running sessions and unfinished launch claims cannot be archived; stop the session first.
+Archive changes and launches share the server launch lock. Archived drafts can be
+edited and finished output can be read. Start requires restoring the draft first.
+Other open views retain their selection and see archive changes on refresh; the server
+also checks archive state at Start. Read-only SQL includes archived data unless filtered
+explicitly. There is no permanent delete action.
+
 Titles, errors, and recorded text are rendered as text, never HTML. Each tab has its own
 selected session. Tabs can share a session, with one controller for input and PTY size.
 Other tabs watch and can explicitly take control.
@@ -259,8 +277,10 @@ worktree default. A preparation stores its chosen tool name and command independ
 of later preset changes, including deletion. Startup commands are edited only in
 Settings. Selecting a different tool snapshots its current command on the server; Shell
 clears it. The preparation keeps its project and workspace. Message drafts and attachments
-work before a run exists. Each project has one unfinished draft, reused across views
-and server restarts. Reopening a draft with **＋** does not reset its choices or message.
+work before a run exists. Each project supports multiple independent drafts, including
+General. Each draft keeps its own name, tool snapshot, worktree choices, message text,
+and attachments across views and server restarts. **＋** always creates a new draft;
+reopening its sidebar entry does not reset its choices or message.
 Launch settings use optimistic revisions, separately from message revisions. Conflicts
 preserve the editor's local edits and report an error. Unsent edits warn before unload.
 
@@ -478,17 +498,20 @@ change. Reattaching at the same size uses the saved screen without requesting an
 application redraw. An ended view never starts another process or invokes native
 provider resume.
 
-Session listing defaults to ten entries at the protocol level, with a limit of 1–1000;
-the UI requests 100. Ordering follows the latest terminal input, output, or run lifecycle
+Session listing defaults to ten entries at the protocol level, with a limit of 1–1000,
+a nonnegative offset, an archive collection flag, and an optional search query. The UI
+requests 101 to display 100 entries and detect another page. Normal listing excludes
+archived sessions; archived listing includes only archived sessions. Ordering follows
+the latest terminal input, output, or run lifecycle
 event (`start`, `run`, or interruption `notice`), newest first. Sessions without these
 events use their creation time. Event sequence breaks timestamp ties. Viewing, resizing,
 renaming, saving drafts, attachments, terminal replies, and saved screens do not change
 recency. Fresh application output still counts, including output while detached or after
 a real size change. Summaries contain ID, title, project ID (empty for standalone),
-workspace, update time, status, and view count.
+workspace, update time, status, archive flag, and view count.
 
-Statuses include `starting`, `running`, `exited`, `stopped`, `failed`, and
-`interrupted`. A running process does not imply model activity or readiness. No
+Statuses include `draft`, `creating`, `launched`, `starting`, `running`, `exited`,
+`stopped`, `failed`, and `interrupted`. A running process does not imply model activity or readiness. No
 completion or message boundaries are inferred from silence.
 
 ## Concurrency and recovery
@@ -571,6 +594,20 @@ integrations in this version.
 
 ## Validation
 
+Archive fixtures cover more than 100 saved drafts, search before pagination, literal
+wildcard characters, restoration after project removal, unchanged draft revisions and
+original attachment bytes, and rejection of active runs or unfinished launch claims.
+A real temporary server test creates two drafts in General, saves independent messages,
+archives one, restarts, finds and restores it, starts a synthetic shell, rejects archiving
+while running, then stops, archives, and replays its output. Restoration starts no process.
+
+Browser checks with a temporary instance verified separate sidebar drafts, saved session
+names and multiline messages before launch, switching, exact draft reload, archive and
+restore, disabled launch for archived drafts, and preservation of the unsent editor after
+launch and stop. They also verified archived search, page 2 with over 100 synthetic
+archived items, search for an item outside page 1, and narrow-layout search. No browser
+errors were reported. The tests used synthetic shells, not a real agent CLI.
+
 A Chrome check with a temporary shell verified divider dragging, arrow keys and size
 limits, terminal dimension updates, and preserved editor size and text across a project
 draft switch. A narrow layout at 250% zoom kept the editor controls reachable. Reloading
@@ -627,10 +664,10 @@ and dark previews. The updated native companion also launched and exited with it
 
 Project fixtures cover General and custom launches, canonical folder uniqueness,
 protected General identity, renaming, removal while a session runs, and restart
-persistence. Draft fixtures cover concurrent project opens, preserved tool snapshots,
+persistence. Draft fixtures cover concurrent creation of independent drafts, preserved tool snapshots,
 Shell selection, attachment persistence, and starting a fresh draft after launch.
 Browser checks verified that project names are plain text without click actions,
-the separate arrows expand or collapse groups, **＋** opens or resumes drafts,
+the separate arrows expand or collapse groups, **＋** creates draft entries,
 and adding a project leaves the current view unchanged.
 They also verified draft restoration after switching, reload
 and server restart, Shell launch in a worktree, and separate drafts for subsequent sessions. No real agent CLI was used for these project checks.

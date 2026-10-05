@@ -45,7 +45,7 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 	}
 	assertRecent := func(id, updated string) {
 		t.Helper()
-		items, err := store.RecentSessions(1)
+		items, err := store.ListSessions(SessionFilter{Limit: 1})
 		if err != nil || len(items) != 1 || items[0].ID != id || items[0].Updated != updated {
 			t.Fatalf("recent = %+v, %v; want %s at %s", items, err, id, updated)
 		}

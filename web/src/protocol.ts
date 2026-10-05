@@ -1,5 +1,5 @@
 // The browser uses the same one-request-per-connection protocol as the Go CLI.
-export const VERSION = 'bonbon/14';
+export const VERSION = 'bonbon/15';
 
 // These types mirror internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -13,16 +13,17 @@ export interface ServerInfo {
   executable: string;
 }
 
-export interface Project { id: string; name: string; workspace: string; created: string; draftId?: string }
+export interface Project { id: string; name: string; workspace: string; created: string }
 
 export interface Tool { id: string; name: string; command: string }
 export interface Settings { revision: number; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
-export interface PreparedSession { id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: { status: string } }
+export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: { status: string } }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
 export interface SessionInfo {
+  archived: boolean;
   preparation?: Preparation;
   worktree?: Worktree;
   projectId: string;
@@ -45,7 +46,8 @@ export interface ComposerState { draft: Draft; attachments: Attachment[] }
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
-type ListRequest = { operation: 'session-list'; limit?: number };
+type ListRequest = { operation: 'session-list'; limit?: number; offset?: number; archived?: boolean; query?: string };
+type ArchiveRequest = { operation: 'session-archive'; session: string; archived: boolean };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
 type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
@@ -56,7 +58,7 @@ type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
-type RPCRequest = SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   | { operation: 'session-resume'; session: string; size: Size };
@@ -246,6 +248,7 @@ export function call(server: ServerInfo, request: ProjectListRequest): Promise<P
 export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
+export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ archived: boolean }>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionInfo[]>;
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

@@ -15,10 +15,10 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 const (
-	sessionColumns = "id,title,workspace,created,COALESCE(project_id,'')"
+	sessionColumns = "id,title,workspace,created,COALESCE(project_id,''),archived"
 	runColumns     = "id,session_id,status,started,ended,pid,detail"
 	eventColumns   = "seq,session_id,run_id,kind,data,text,created"
 )
@@ -26,6 +26,7 @@ const (
 var ErrNotFound = errors.New("session not found")
 
 type Session struct {
+	Archived    bool         `json:"archived"`
 	ProjectID   string       `json:"projectId"`
 	ID          string       `json:"id"`
 	Title       string       `json:"title"`
@@ -126,7 +127,8 @@ func initialize(db *sql.DB) error {
             CREATE TABLE sessions (
                 id TEXT PRIMARY KEY, title TEXT NOT NULL,
                 workspace TEXT NOT NULL, created TEXT NOT NULL,
-                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL
+                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+                archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1))
             );
             CREATE TABLE runs (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -213,7 +215,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanSession(row scanner) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Title, &s.Workspace, &s.Created, &s.ProjectID)
+	err := row.Scan(&s.ID, &s.Title, &s.Workspace, &s.Created, &s.ProjectID, &s.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}

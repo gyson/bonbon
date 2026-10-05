@@ -14,7 +14,7 @@ import (
 	"bonbon/internal/protocol"
 )
 
-func TestProjectDraftIsSharedAndCommandsComeFromSettings(t *testing.T) {
+func TestProjectDraftsAreIndependentAndCommandsComeFromSettings(t *testing.T) {
 	s, _ := composerServer(t)
 	project, err := s.addProject("Draft project", t.TempDir())
 	if err != nil {
@@ -42,10 +42,12 @@ func TestProjectDraftIsSharedAndCommandsComeFromSettings(t *testing.T) {
 	wg.Wait()
 	close(ids)
 	var id string
+	seen := map[string]bool{}
 	for got := range ids {
-		if id != "" && got != id {
-			t.Fatal("concurrent tabs created different drafts")
+		if seen[got] {
+			t.Fatal("concurrent creates reused a draft")
 		}
+		seen[got] = true
 		id = got
 	}
 	if id == "" {
@@ -85,21 +87,21 @@ func TestProjectDraftIsSharedAndCommandsComeFromSettings(t *testing.T) {
 	if _, err = s.savePreparation(&request); err == nil {
 		t.Fatal("accepted absent tool")
 	}
-	reopened, err := s.prepareProject(context.Background(), project.ID)
+	reopened, err := s.store.Session(id)
 	if err != nil || reopened.ID != id || reopened.Title != "Keep my draft" || reopened.Preparation.Command != "" {
 		t.Fatalf("reopening overwrote draft: %+v %v", reopened, err)
 	}
 	projects, err := s.store.Projects()
-	if err != nil || len(projects) != 1 || projects[0].DraftID != id {
+	if err != nil || len(projects) != 1 || projects[0].ID != project.ID {
 		t.Fatal(projects, err)
 	}
-	recent, err := s.store.RecentSessions(100)
-	if err != nil {
-		t.Fatal(err)
+	recent, err := s.store.ListSessions(history.SessionFilter{Limit: 100})
+	if err != nil || len(recent) != 9 { // Eight project drafts and the composer fixture.
+		t.Fatal("drafts missing from session list", recent, err)
 	}
-	for _, session := range recent {
-		if session.ID == id {
-			t.Fatal("project draft appeared as a started session")
+	for _, item := range recent {
+		if seen[item.ID] && (item.Preparation == nil || item.Preparation.State != "draft" || item.Run != nil) {
+			t.Fatal("draft was launched", item)
 		}
 	}
 }

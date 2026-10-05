@@ -131,18 +131,32 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the server.
 After rebuilding, use `server restart` to serve the new embedded assets; restart stops
 active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/14`. `server restart` can replace a server using a
+This change uses protocol `bonbon/15`. `server restart` can replace a server using a
 different session protocol when it supports the same verified shutdown request.
-UI and query commands still require the current protocol. SQLite now uses format 5
-for settings, preparations, and managed worktrees. Older formats are rejected; use a fresh `--dir` instead of restarting this build against an older archive.
+UI and query commands still require the current protocol. SQLite now uses format 6
+for settings, preparations, managed worktrees, and session archive flags. Older formats
+are rejected; use a fresh `--dir` instead of restarting against an older archive.
 
-The sidebar groups the 100 most recently active sessions under saved projects, newest
-terminal activity first. Input, output, and run state changes affect order; opening a
-view, resizing it, renaming a session, and saving drafts do not. Use
+The sidebar groups sessions and drafts under saved projects, with 100 items per page,
+newest terminal activity first. Search matches session names, IDs, folders, and project
+names across the whole selected collection. Previous and Next reach older items. Input,
+output, and run state changes affect order; opening a view, resizing it, renaming a
+session, and saving drafts do not. Use
 **Add project** to save an existing folder, with an optional name that defaults to its
-basename. Git is optional. Click **＋** beside a project to open its saved draft. Starting it adds a session beneath that project; **＋** then opens a fresh draft. Project names are plain text; use the small arrow to expand or collapse sessions. Use **⋯** to rename or remove a custom project. Removing a project moves
-its sessions and unfinished draft to **Standalone** and keeps their history, files, and processes.
+basename. Git is optional. Click **＋** beside a project to create and select a new
+draft in the sidebar. Each project can have several drafts. Click a draft entry to
+reopen it. Starting keeps the same session entry and ID. Project names are plain text;
+use the small arrow to expand or collapse sessions. Use **⋯** to rename or remove a
+custom project. Removing a project moves its sessions and unfinished drafts to
+**Standalone** and keeps their history, files, and processes.
 **Rename** in a session's toolbar changes its title.
+
+**Archive** puts away a draft or finished session without deleting any data or files.
+Stop a running session before archiving it. Open **Archived** to search or browse saved
+items, read recorded output, and edit saved drafts. **Restore** returns the item to its
+project (or Standalone if the project was removed). Restore never launches a process;
+restore an archived draft before starting it. Archiving saves the current editor first
+and returns to the welcome view. Other windows retain their views.
 
 **General** is always available for work across projects. Its working folder is
 `<instance>/workspaces/general`; it cannot be renamed or removed. General and custom
@@ -150,8 +164,10 @@ projects persist in SQLite across browser tabs and server restarts. The same can
 folder cannot be saved twice. Multiple sessions can still share a folder.
 
 Every new session starts from a saved project, including **General**. The project
-keeps one unfinished draft across tabs, project switches, and server restarts. Edit the
-session name, choose a tool or **Shell**, and optionally enable a worktree. The project
+keeps independent drafts across tabs, project switches, and server restarts. Session
+names, launch choices, and each session’s one message editor save automatically,
+including its text and attachments before launch. Edit the session name, choose a tool
+or **Shell**, and optionally enable a worktree. The project
 and folder are fixed, and startup commands are edited only in **Settings**. Starting
 keeps the message and attachments in the session editor until you send them.
 

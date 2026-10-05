@@ -74,7 +74,7 @@ bonbon --dir ~/bonbon-experiment query "SELECT id,title FROM sessions"
 ```
 
 `--dir` is BonBon's instance directory. It does not change the agent's working directory;
-click ＋ beside a saved project in the UI to open its draft. Relative instance paths resolve
+click ＋ beside a saved project in the UI to create a new draft. Relative instance paths resolve
 from the client's current directory. Paths with symlinks resolve to the same instance.
 
 BonBon sets `BONBON_SESSION` and the canonical `BONBON_DIR` inside each wrapped agent.
@@ -285,16 +285,18 @@ The tables are:
 | Table | Columns |
 | --- | --- |
 | `projects` | `id`, `name`, `workspace`, `created` |
-| `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone) |
+| `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone), `archived` (0 or 1) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
 | `settings` | `id`, `revision`, `data` (JSON defaults and tool presets) |
 | `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 5. Earlier formats are rejected; select a fresh `--dir`.
+The schema uses format 6. Earlier formats are rejected; select a fresh `--dir`.
 Projects are managed in the UI; there are no project CLI commands. Removing a custom
 project clears session membership but preserves its recorded workspace and history.
+Archiving hides a draft or finished session in the UI. SQL still includes it unless
+you filter `sessions.archived`; restoration never starts a process.
 
 IDs are text. Timestamps are UTC text. Event sequence numbers
 are integers shared across the archive. `data` holds original bytes; `text` is derived

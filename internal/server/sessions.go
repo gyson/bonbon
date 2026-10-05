@@ -398,20 +398,14 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	}
 }
 
-func (s *Server) listSessions(limit int) ([]protocol.SessionInfo, error) {
-	if limit == 0 {
-		limit = 10
-	}
-	if limit < 1 || limit > 1000 {
-		return nil, errors.New("limit must be between 1 and 1000")
-	}
-	sessions, err := s.store.RecentSessions(limit)
+func (s *Server) listSessions(filter history.SessionFilter) ([]protocol.SessionInfo, error) {
+	sessions, err := s.store.ListSessions(filter)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]protocol.SessionInfo, 0, len(sessions))
 	for _, session := range sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended", Preparation: session.Preparation, Worktree: session.Worktree}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Archived: session.Archived, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended", Preparation: session.Preparation, Worktree: session.Worktree}
 		if session.Preparation != nil {
 			info.Status = session.Preparation.State
 		}
@@ -429,6 +423,16 @@ func (s *Server) listSessions(limit int) ([]protocol.SessionInfo, error) {
 		result = append(result, info)
 	}
 	return result, nil
+}
+
+func (s *Server) archiveSession(id string, archived bool) error {
+	// Serialize with launch so archiving cannot race a new PTY or worktree.
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	if archived && s.running(id) != nil {
+		return errors.New("stop the session before archiving it")
+	}
+	return s.store.SetSessionArchived(id, archived)
 }
 
 func (s *Server) stopSession(id string) (any, error) {
