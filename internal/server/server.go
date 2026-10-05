@@ -155,8 +155,6 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-rename":
 		err := s.store.RenameSession(request.Session, request.Name)
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
-	case "history-instructions":
-		s.reply(conn, s.historyInstructions(), nil)
 	case "session-new":
 		s.newSession(ctx, conn, request.Run)
 	case "session-resume":

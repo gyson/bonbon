@@ -24,9 +24,6 @@ server services. Do not add a separate browser session store or database writer.
   belongs in the core, scoped to that workspace.
 - Add verified agent-specific attachment delivery where plain file references are
   insufficient. Add imports and session forks when their core operations exist.
-- Evaluate automatic delivery of history-search instructions through each CLI's verified
-  workspace instruction mechanism. The current editor action only inserts a draft;
-  do not type instructions into an ordinary shell or infer prompt readiness.
 - Validate daily use with real agent CLIs in the browser. Synthetic terminal checks
   do not establish agent compatibility.
 - Add a desktop shell and global shortcut after the web workflow is useful. The
@@ -44,6 +41,21 @@ environment for the shell. Saved projects and General are implemented; see [SPEC
 - Preserve shared views, single-controller input, and recording behavior. Reconnection must
   not replay input or infer that an uncertain send was never delivered.
 - Verify development use does not modify production data.
+
+## Custom context
+
+Status: deferred. Design a complete feature for adding, editing, and applying custom
+context to projects and sessions, including General. The scope and interface remain
+undecided; no context insertion or automatic delivery is implemented.
+
+- Treat guidance for searching other sessions with `bonbon query` as one use case
+  within this feature, rather than a separate history-search button.
+- Keep saved context in SQLite. Make the selected context and its scope visible to
+  the user before applying it.
+- Verify delivery through each agent's supported interfaces. Do not type instructions
+  into an ordinary shell or infer prompt readiness from terminal output.
+- Preserve the user's current request and distinguish retrieved history from current
+  instructions and authorization.
 
 ## Agent activity indicators
 

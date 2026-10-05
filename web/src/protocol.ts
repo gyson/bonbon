@@ -49,8 +49,7 @@ type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
 type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
-type InstructionsRequest = { operation: 'history-instructions' };
-type RPCRequest = ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest | InstructionsRequest;
+type RPCRequest = ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-new'; run: Run }
   | { operation: 'session-resume'; session: string; size: Size };
@@ -236,7 +235,6 @@ export function call(server: ServerInfo, request: ProjectListRequest): Promise<P
 export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
 export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
-export function call(server: ServerInfo, request: InstructionsRequest): Promise<string>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionInfo[]>;
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

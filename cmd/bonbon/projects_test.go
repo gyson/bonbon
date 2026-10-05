@@ -96,11 +96,6 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Contains(views[1].text(), "still-working") })
-	var instructions string
-	rpc(protocol.Request{Operation: "history-instructions"}, &instructions)
-	if !strings.Contains(instructions, "sqlite_schema") || !strings.Contains(instructions, "project_id") {
-		t.Fatal("missing retrieval guidance")
-	}
 	// Session creation for the removed project must fail without leaving a new record.
 	removed := openSessionView(t, protocol.Request{Operation: "session-new", Run: &protocol.Run{ProjectID: custom.ID, Size: protocol.Size{Rows: 24, Cols: 80}}})
 	select {

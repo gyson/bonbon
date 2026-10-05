@@ -72,7 +72,6 @@ operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`; sessions become standalone |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
-| `history-instructions` | None | `result`, containing a string to insert into a draft; no terminal input |
 | `session-list` | `limit`, default 10, range 1–1000 | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
@@ -102,8 +101,8 @@ canonical paths. Multiple sessions may share the same or overlapping workspace.
 An empty title defaults to the shell and workspace names. Terminal size is
 `{"rows":24,"cols":80}`, with 2–512 columns and 1–256 rows.
 
-Protocol 12 adds project operations, project launches, session renaming, and retrieval
-guidance. SQLite format 4 stores project metadata and session membership. Use a fresh
+Protocol 12 adds project operations, project launches, and session renaming.
+SQLite format 4 stores project metadata and session membership. Use a fresh
 instance directory for older archives; there is no migration. Rebuild, start the new
 server, and reload the browser.
 
@@ -120,11 +119,6 @@ canonical path recorded at launch.
 that timestamp; event sequence breaks timestamp ties. View changes, drafts, attachments,
 terminal replies, and saved screens do not affect order. Reattaching at the same
 dimensions does not resize the PTY or request an application redraw.
-
-`history-instructions` returns a plain-text guide with commands for the verified server's
-executable and instance. Clients may insert it into a draft. Requesting the guide changes
-no history and sends no input. It does not confer extra query scope or indicate that an
-agent has read any history. The browser saves inserted instructions using `composer-draft`.
 
 ## Terminal streams
 

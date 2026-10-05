@@ -37,7 +37,6 @@ export class Composer {
   private readonly picker = element('composer-picker', HTMLInputElement);
   private readonly attach = element('composer-attach', HTMLButtonElement);
   private readonly submit = element('composer-submit', HTMLButtonElement);
-  private readonly instructions = element('composer-instructions', HTMLButtonElement);
   private readonly review = element('composer-review', HTMLButtonElement);
   private session = '';
   private state = empty();
@@ -56,19 +55,6 @@ export class Composer {
       this.toggle.textContent = this.panel.hidden ? 'Message editor' : 'Hide editor';
       if (!this.panel.hidden) this.text.focus();
     };
-    this.instructions.onclick = () => this.host.action(async () => {
-      const server = this.host.server();
-      if (!server || !this.loaded || this.state.draft.pending) return;
-      const instructions = await call(server, { operation: 'history-instructions' });
-      if (!this.state.draft.text.startsWith(instructions)) {
-        const text = instructions + this.state.draft.text;
-        if (encoder.encode(text).length > 64 * 1024) throw new Error('The instructions and draft exceed 64 KiB.');
-        this.state.draft.text = this.text.value = text;
-        this.changed();
-        await this.flush();
-      }
-      this.open();
-    }).then(() => this.text.focus());
     this.text.oninput = () => {
       this.state.draft.text = this.text.value;
       this.changed();
@@ -101,19 +87,12 @@ export class Composer {
     });
   }
 
-  open(): void {
-    this.panel.hidden = false;
-    this.toggle.setAttribute('aria-expanded', 'true');
-    this.toggle.textContent = 'Hide editor';
-    this.text.focus();
-  }
-
   controls(blocked = this.blocked, active = this.active): void {
     this.blocked = blocked;
     this.active = active;
     const unavailable = blocked || !this.loaded;
     this.toggle.disabled = !this.session;
-    this.instructions.disabled = this.text.disabled = this.attach.disabled = unavailable || this.state.draft.pending;
+    this.text.disabled = this.attach.disabled = unavailable || this.state.draft.pending;
     this.submit.disabled = unavailable || !active || this.state.draft.pending || (!this.text.value.trim() && !this.state.attachments.length);
     this.review.hidden = !this.state.draft.pending;
     this.review.disabled = unavailable;

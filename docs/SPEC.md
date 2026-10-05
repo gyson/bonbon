@@ -165,8 +165,8 @@ Session operations and health checks require the current protocol, with no versi
 fallback. Shutdown uses the version verified above. The current version is
 `bonbon/12`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
 Binary messages and invalid JSON are rejected. There is no extra length prefix.
-Protocol 12 adds saved project operations, project session launches, session renaming,
-and history-search instructions. SQLite format 4 adds projects and session membership.
+Protocol 12 adds saved project operations, project session launches, and session renaming.
+SQLite format 4 adds projects and session membership.
 Older database formats are rejected; use a fresh instance directory. Reload the UI
 after starting the new server.
 
@@ -275,24 +275,6 @@ absolute path is stored in history. Multiple sessions may share it. The shell re
 normal startup files. Agents retain their arguments, authentication, and permissions;
 BonBon injects no prompts. Exiting an agent returns to the shell; exiting the shell ends
 the session.
-
-### History-search instructions
-
-New General sessions open the message editor. In any session, **Insert history-search
-instructions** requests a server-owned guide through `history-instructions` and prepends
-it to the current draft. Existing draft text and attachments are retained. The normal
-revision-checked draft save persists the result in SQLite. Repeating the action with the
-same guide already at the start does not duplicate it. Pending submissions must be
-reviewed before editing or inserting instructions.
-
-The guide includes shell-quoted executable and instance paths, schema discovery,
-project/session listing, derived-output search, context reads, pagination, and stable
-session/event references. SQL still controls query scope; General has no extra access.
-The guide identifies recorded content as evidence rather than current authority and
-explains that terminal chunks are not exact messages. It does not load history by itself.
-There is no automatic prompt submission or generated workspace instruction file. Users
-start an agent and explicitly submit from the editor when its prompt is ready. Automatic
-agent discovery and provider-specific instruction delivery are not implemented.
 
 xterm.js displays server-rendered frames and forwards keyboard input, paste and resize
 requests through the shared stream. The UI sends no provider flags or prompts. Source
@@ -562,11 +544,8 @@ and dark previews. The updated native companion also launched and exited with it
 
 Project fixtures cover General and custom launches, canonical folder uniqueness,
 protected General identity, renaming, removal while a session runs, and restart
-persistence. Query examples in the retrieval guide run against a synthetic archive;
-shell quoting is checked with spaces, quotes, and shell metacharacters. Browser checks
-verified one-click project launches, standalone creation, project/session renaming,
-and draft insertion without duplication or loss across reload. No real agent CLI
-was used for these project checks.
+persistence. Browser checks verified one-click project launches, standalone creation,
+and project/session renaming. No real agent CLI was used for these project checks.
 
 Storage and composer tests cover read-only queries, cancellation and limits, format
 rejection, persistence, original bytes, draft conflicts, pending submissions, attachment

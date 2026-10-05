@@ -156,15 +156,6 @@ from startup and records the canonical absolute path. Other relative paths, `~us
 and environment-variable expansion are unsupported. Every session opens the server's
 `$SHELL -i`, falling back to `/bin/sh -i`. Run agent commands inside that shell.
 
-In General, the message editor opens with the new session. **Insert history-search
-instructions** adds a guide before your current draft, ready to review and send to
-an agent. It explains schema discovery, project/session search, surrounding events,
-and source references through read-only `bonbon query`. The guide uses the running
-server's executable and instance directory, so it also works when `bonbon` is not on
-PATH. This action is available in custom and standalone sessions too. It saves a draft;
-it does not send terminal input. Start your agent and check its prompt before submitting.
-Instructions are not automatically placed in workspace files or delivered to a CLI.
-
 Browser launches use the server's environment from startup, with `TERM=xterm-256color`.
 Restart the server from the desired shell after changing PATH or environment settings.
 The shell reads its normal startup files. Commands keep their own arguments,
@@ -337,8 +328,8 @@ interactive shells and synthetic commands, verifying raw bytes, command argument
 exit codes, closed views, background recording, reconnection,
 explicit stop, recent session listing, SQL scope, and independent sessions sharing the same or overlapping workspaces.
 Project fixtures cover canonical folder uniqueness, protected General identity,
-launching shells in both project types, removal while running, restart persistence,
-and executable history-search examples. These use synthetic shells, not a real agent.
+launching shells in both project types, removal while running, and restart persistence.
+These use synthetic shells, not a real agent.
 Storage tests cover read-only SQL, cancellation, result limits, persistence across
 database reopen, and format rejection.
 

@@ -390,7 +390,6 @@ async function openSession(session: SessionView, run?: Omit<Run, 'size'>): Promi
   });
   await connection.connect();
   if (selected?.id) await composer.select(selected.id);
-  if (run?.projectId === 'general') composer.open();
 }
 
 async function startProject(project: Project, title = ''): Promise<void> {

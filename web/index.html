@@ -36,11 +36,11 @@
       <div id="terminal" aria-label="Session terminal"></div>
       <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span><button id="composer-toggle" aria-expanded="false" aria-controls="composer" disabled>Message editor</button></div>
       <section id="composer" aria-label="Message editor" hidden>
-        <div class="composer-heading"><label for="composer-text">Compose a message</label><button id="composer-instructions" disabled>Insert history-search instructions</button></div>
+        <label for="composer-text">Compose a message</label>
         <textarea id="composer-text" rows="4" placeholder="Write and edit here, then submit to the terminal…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
         <div id="composer-files" aria-label="Attached files"></div>
         <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Submit ↵</button></div>
-        <p id="composer-help">Launch your agent and check its prompt before submitting. History-search instructions are inserted into this draft for you to review and send. Enter adds a line. Submit pastes into the current terminal prompt and presses Enter. You can still type directly in the terminal. Paste or drop files here to send local file references.</p>
+        <p id="composer-help">Enter adds a line. Submit pastes into the current terminal prompt and presses Enter. You can still type directly in the terminal. Paste or drop files here to send local file references.</p>
       </section>
     </section>
   </main>
