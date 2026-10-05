@@ -30,8 +30,8 @@ server services. Do not add a separate browser session store or database writer.
   minimal macOS menu bar is implemented; see [SPEC.md](SPEC.md#macos-menu-bar).
 
 See [GOAL.md](GOAL.md#future-workspace-interface) for the intended workspace experience.
-Keep the deployed Go server self-contained. Browser launches must continue to expose
-the workspace choice and use the server environment for its shell.
+Keep the deployed Go server self-contained. Browser launches select a saved project or standalone workspace and use the server
+environment for the shell. Saved projects and General are implemented; see [SPEC.md](SPEC.md#projects-and-launches).
 
 ### Acceptance checks for future additions
 
@@ -41,6 +41,21 @@ the workspace choice and use the server environment for its shell.
 - Preserve shared views, single-controller input, and recording behavior. Reconnection must
   not replay input or infer that an uncertain send was never delivered.
 - Verify development use does not modify production data.
+
+## Custom context
+
+Status: deferred. Design a complete feature for adding, editing, and applying custom
+context to projects and sessions, including General. The scope and interface remain
+undecided; no context insertion or automatic delivery is implemented.
+
+- Treat guidance for searching other sessions with `bonbon query` as one use case
+  within this feature, rather than a separate history-search button.
+- Keep saved context in SQLite. Make the selected context and its scope visible to
+  the user before applying it.
+- Verify delivery through each agent's supported interfaces. Do not type instructions
+  into an ordinary shell or infer prompt readiness from terminal output.
+- Preserve the user's current request and distinguish retrieved history from current
+  instructions and authorization.
 
 ## Agent activity indicators
 
@@ -129,7 +144,7 @@ Production defaults to `~/.bonbon/history.sqlite`; development defaults to
 in the main file. Replication must account for this; periodically copying only the main
 file is insufficient. Server logs, `server.json`, process locks, and rebuildable caches
 are not history and must not be restored as live connection state.
-Workspace files, provider-managed credentials, and running processes are outside the
+Workspace files (including General), provider-managed credentials, and running processes are outside the
 backup scope.
 
 ### Candidate approach

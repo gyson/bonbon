@@ -171,7 +171,7 @@ func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	session, err := store.CreateSession("fixture", t.TempDir())
+	session, err := store.CreateSession("fixture", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

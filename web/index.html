@@ -12,21 +12,22 @@
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></div>
     <button id="new-session" class="primary">＋ New session</button>
-    <label class="search-label"><span class="sr-only">Filter recent sessions</span><input id="filter" type="search" placeholder="Filter recent sessions…"></label>
-    <div class="section-heading"><span>RECENT SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
-    <nav id="sessions" aria-label="Sessions"><p class="muted">Connecting…</p></nav>
+    <label class="search-label"><span class="sr-only">Filter projects and sessions</span><input id="filter" type="search" placeholder="Filter projects and sessions…"></label>
+    <div class="section-heading"><span>PROJECTS · RECENT SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
+    <button id="add-project" class="add-project">＋ Add project</button>
+    <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
   <main>
     <header class="toolbar">
       <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p></div>
-      <div class="actions"><span id="status" class="badge" hidden></span><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="stop" class="danger" disabled>Stop session</button></div>
+      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>
     <section id="welcome" class="welcome">
       <span class="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
       <h2>Your agents. One workspace.</h2>
-      <p>Start a terminal session or open one from the sidebar.<br>BonBon keeps recording while you’re away.</p>
+      <p>Add a project, start in General, or reopen a session.<br>BonBon keeps recording while you’re away.</p>
       <button id="welcome-new" class="primary">Start a session <span aria-hidden="true">↗</span></button>
       <div class="welcome-notes"><div><strong>Stay connected</strong><p>Reopen a session or share it across browser tabs.</p></div><div><strong>Keep the history</strong><p>Return to recorded output even after a process ends.</p></div></div>
     </section>
@@ -47,10 +48,30 @@
     <form id="launch-form">
       <div class="dialog-heading"><div><span class="eyebrow">A FRESH START</span><h2 id="launch-title">New session</h2></div><button type="button" id="cancel-launch" class="text-button" aria-label="Close new session">✕</button></div>
       <label>Session title <span class="optional">optional</span><input id="launch-name" placeholder="What are you working on?" maxlength="200"></label>
-      <label>Workspace<input id="launch-workspace" placeholder="~/projects/my-project or /absolute/path" required></label>
+      <label>Project<select id="launch-project"></select></label>
+      <label id="launch-folder">Workspace<input id="launch-workspace" placeholder="~/projects/my-project or /absolute/path" required></label>
       <p class="form-help">Opens an interactive shell in this workspace. Run Codex or any other command from there.</p>
       <p id="launch-error" class="form-error" role="alert" hidden></p>
       <button id="launch-submit" class="primary" type="submit">Start session</button>
+    </form>
+  </dialog>
+  <dialog id="project-dialog" aria-labelledby="project-title">
+    <form id="project-form">
+      <div class="dialog-heading"><h2 id="project-title">Add project</h2><button type="button" id="cancel-project" class="text-button" aria-label="Close project">✕</button></div>
+      <label>Project name <span id="project-name-hint" class="optional">defaults to folder name</span><input id="project-name" maxlength="200" placeholder="My project"></label>
+      <label id="project-folder">Folder<input id="project-workspace" placeholder="~/projects/my-project" required></label>
+      <p class="form-help">Save a folder to start new sessions there with one click. Any existing folder works; Git is optional.</p>
+      <p id="project-remove-help" class="form-help" hidden>Removing a project moves its sessions to Standalone. Their history, running processes, and files are preserved.</p>
+      <p id="project-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="project-remove" type="button" class="danger" hidden>Remove project</button><button id="project-submit" type="submit" class="primary">Add project</button></div>
+    </form>
+  </dialog>
+  <dialog id="rename-dialog" aria-labelledby="rename-title">
+    <form id="rename-form">
+      <div class="dialog-heading"><h2 id="rename-title">Rename session</h2><button type="button" id="cancel-rename" class="text-button" aria-label="Close rename">✕</button></div>
+      <label>Session title<input id="rename-name" maxlength="200" required></label>
+      <p id="rename-error" class="form-error" role="alert" hidden></p>
+      <button id="rename-submit" type="submit" class="primary">Save title</button>
     </form>
   </dialog>
   <noscript>Enable JavaScript to use BonBon’s web UI.</noscript>

@@ -21,7 +21,7 @@ func composerServer(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	session, err := store.CreateSession("Composer fixture", t.TempDir())
+	session, err := store.CreateSession("Composer fixture", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestComposerRejectsStaleSavesAndCrossSessionFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := s.store.CreateSession("Other", t.TempDir())
+	other, err := s.store.CreateSession("Other", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/11"
+const Version = "bonbon/12"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -20,12 +20,16 @@ type Size struct {
 }
 
 type Run struct {
+	ProjectID string `json:"projectId,omitempty"`
 	Workspace string `json:"workspace"`
 	Title     string `json:"title"`
 	Size      Size   `json:"size"`
 }
 
 type Request struct {
+	Project   string  `json:"project,omitempty"`
+	Name      string  `json:"name,omitempty"`
+	Workspace string  `json:"workspace,omitempty"`
 	Protocol  string  `json:"protocol"`
 	Operation string  `json:"operation"`
 	Instance  string  `json:"instance,omitempty"`
@@ -67,6 +71,7 @@ type Composer struct {
 }
 
 type SessionInfo struct {
+	ProjectID string `json:"projectId"`
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Workspace string `json:"workspace"`

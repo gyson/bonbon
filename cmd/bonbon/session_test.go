@@ -83,6 +83,25 @@ func fixtureAgent() {
 		for {
 			time.Sleep(time.Second)
 		}
+	case "activity":
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, syscall.SIGWINCH)
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		fmt.Println("READY")
+		emitted := false
+		for {
+			select {
+			case <-signals:
+				size, _ := pty.GetsizeFull(os.Stdin)
+				fmt.Printf("RESIZED=%dx%d\n", size.Rows, size.Cols)
+			case <-ticker.C:
+				if _, err := os.Stat(os.Args[3]); err == nil && !emitted {
+					fmt.Println("BACKGROUND_ACTIVITY")
+					emitted = true
+				}
+			}
+		}
 	case "scope":
 		fmt.Println("READY")
 		cmd := exec.Command(os.Args[0], "query", "SELECT session_id FROM events WHERE session_id='"+os.Getenv("BONBON_SESSION")+"'")
@@ -428,7 +447,7 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	dataDir, workspace := t.TempDir(), t.TempDir()
 	canonical, _ := agent.Canonical(workspace)
 	store := archive(t, dataDir)
-	session, err := store.CreateSession("Synthetic interrupted run", canonical)
+	session, err := store.CreateSession("Synthetic interrupted run", canonical, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +604,7 @@ func TestRecentSessionList(t *testing.T) {
 	store := archive(t, dataDir)
 	var first history.Session
 	for i := 0; i < 12; i++ {
-		session, err := store.CreateSession(fmt.Sprintf("session %d", i), t.TempDir())
+		session, err := store.CreateSession(fmt.Sprintf("session %d", i), t.TempDir(), "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -3,11 +3,9 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -164,7 +162,7 @@ func (r *runningSession) finish(code int, err error) {
 }
 
 func (s *Server) newSession(ctx context.Context, conn *protocol.Conn, request *protocol.Run) {
-	run, err := prepareRun(request)
+	run, err := s.prepareProjectRun(request)
 	if err != nil {
 		s.reply(conn, nil, err)
 		return
@@ -178,7 +176,7 @@ func (s *Server) newSession(ctx context.Context, conn *protocol.Conn, request *p
 		run.Title = filepath.Base(run.Shell) + " · " + filepath.Base(workspace)
 	}
 	s.mu.Lock()
-	session, err := s.store.CreateSession(run.Title, workspace)
+	session, err := s.store.CreateSession(run.Title, workspace, run.ProjectID)
 	if err != nil {
 		s.mu.Unlock()
 		s.reply(conn, nil, err)
@@ -211,16 +209,11 @@ func prepareRun(request *protocol.Run) (*agent.Launch, error) {
 		return nil, errors.New("invalid new session request")
 	}
 	run := agent.Launch{Run: *request}
-	if run.Workspace == "~" || strings.HasPrefix(run.Workspace, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve workspace home directory: %w", err)
-		}
-		run.Workspace = filepath.Join(home, strings.TrimPrefix(run.Workspace[1:], "/"))
+	workspace, err := expandWorkspace(run.Workspace)
+	if err != nil {
+		return nil, err
 	}
-	if !filepath.IsAbs(run.Workspace) {
-		return nil, errors.New("use an absolute workspace path or ~/path from the server's home directory")
-	}
+	run.Workspace = workspace
 	run.Shell = os.Getenv("SHELL")
 	if run.Shell == "" {
 		run.Shell = "/bin/sh"
@@ -434,7 +427,7 @@ func (s *Server) listSessions(limit int) ([]protocol.SessionInfo, error) {
 	}
 	result := make([]protocol.SessionInfo, 0, len(sessions))
 	for _, session := range sessions {
-		info := protocol.SessionInfo{ID: session.ID, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended"}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended"}
 		if session.Run != nil {
 			info.Status = session.Run.Status
 		}

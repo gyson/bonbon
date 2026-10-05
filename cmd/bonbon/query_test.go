@@ -12,8 +12,8 @@ func TestQueryCLISelectsExplicitScopeAndRejectsWrites(t *testing.T) {
 	directory := t.TempDir()
 	startTestServer(t, directory)
 	store := archive(t, directory)
-	first, _ := store.CreateSession("first", t.TempDir())
-	store.CreateSession("second", t.TempDir())
+	first, _ := store.CreateSession("first", t.TempDir(), "")
+	store.CreateSession("second", t.TempDir(), "")
 	t.Setenv("BONBON_SESSION", first.ID)
 	output, err := testCommand("query", "SELECT title FROM sessions ORDER BY title").CombinedOutput()
 	var result history.QueryResult

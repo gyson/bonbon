@@ -48,8 +48,8 @@ The SQLite driver exposes query authorization and cancellation through supported
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
 The project is in early development. Commands, APIs, configuration, and on-disk formats
-are unstable; backward compatibility is not supported. Storage uses format version 3
-with only sessions, runs, and events. Other formats are rejected with a clear error.
+are unstable; backward compatibility is not supported. Storage uses format version 4
+with projects, sessions, runs, and events. Other formats are rejected with a clear error.
 There are no migrations or legacy schema paths.
 
 The history package separates schema and models, session/run operations, event capture, replay,
@@ -163,11 +163,12 @@ Health checks read the greeting and close without sending an operation.
 
 Session operations and health checks require the current protocol, with no version
 fallback. Shutdown uses the version verified above. The current version is
-`bonbon/11`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
+`bonbon/12`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
 Binary messages and invalid JSON are rejected. There is no extra length prefix.
-Protocol 11 removes client-supplied shell and environment settings and redundant server
-metadata in session replies. Rebuild and restart the server, then reload the UI.
-SQLite remains format version 3.
+Protocol 12 adds saved project operations, project session launches, and session renaming.
+SQLite format 4 adds projects and session membership.
+Older database formats are rejected; use a fresh instance directory. Reload the UI
+after starting the new server.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/`
 for its static files, and `GET /client-config` for browser connection information.
@@ -228,24 +229,52 @@ server requires a reload using its current URL. Assets and configuration disable
 Host checks apply to every route. A content security policy restricts scripts and network
 access to the local origin and blocks framing. Terminal libraries are served locally.
 
-The sidebar lists the 100 most recently active sessions through `session-list`. A text
-filter matches their title, workspace, or ID. The list refreshes every five seconds
-while visible. Titles, errors, and recorded text are rendered as text, never HTML.
-Each tab has its own selected session. Tabs can share a session, with one controller
-for input and PTY size. Other tabs watch and can explicitly take control.
+The sidebar lists saved projects and groups the 100 most recently active sessions
+under them through `project-list` and `session-list`. General appears first; custom
+projects are sorted by name. Groups can be collapsed in each view. A text filter matches
+project names and paths, or session titles, workspaces, and IDs. The list refreshes every
+five seconds while visible. This is a recent-session view, not full-history pagination.
+Titles, errors, and recorded text are rendered as text, never HTML. Each tab has its own
+selected session. Tabs can share a session, with one controller for input and PTY size.
+Other tabs watch and can explicitly take control.
 
-The launch form asks only for a workspace and optional title. It sends `session-new`. The server resolves its `$SHELL` and starts it with `-i`, using
-`/bin/sh` when unset. A nonempty relative shell path is rejected; names on PATH and
-absolute paths are accepted. The request cannot override the shell or environment
-or supply a command. The server inherits its startup environment and sets `TERM=xterm-256color`.
-An empty title defaults to the shell name and workspace basename.
+### Projects and launches
+
+`project-add` saves an existing canonical directory and a name, defaulting to the folder
+basename. Git is not required. Canonical paths are unique across saved projects; parent
+and child folders remain allowed. Project IDs are independent of their names and paths.
+Names contain 1–200 characters without control characters. Custom projects can be
+renamed and removed. Removal sets their sessions' `project_id` to NULL, shown under
+Standalone; it preserves recorded workspace paths, runs, recordings, drafts, and files.
+`session-rename` changes a session title without changing its ID or recorded activity.
+
+On startup the server creates the General project with ID `general` and a private
+`<instance>/workspaces/general` folder. General cannot be renamed or removed. The folder
+is created only after opening a supported database. Its saved path follows the selected
+instance location on startup; old sessions retain their original workspace paths.
+Project metadata is authoritative in SQLite. Files created in General are ordinary
+workspace files outside the database, like files in custom projects.
+
+Each project's **＋** starts a session directly. The global **New session** dialog
+selects a project or a standalone workspace and an optional title. New sessions send
+either `run.projectId` or `run.workspace`; supplying both is rejected. The server looks
+up a project's folder and validates it for each launch. A missing project or folder
+fails instead of falling back to General. General is the initial dialog selection;
+when a session is selected, its project or standalone choice is preselected.
+
+The server resolves its `$SHELL` and starts it with `-i`, using `/bin/sh` when unset.
+A nonempty relative shell path is rejected; names on PATH and absolute paths are
+accepted. Requests cannot override the shell or environment or supply a command. The
+server inherits its startup environment and sets `TERM=xterm-256color`. An empty title
+defaults to the shell name and workspace basename.
 
 Workspaces accept absolute paths, `~`, and `~/path`. Home expansion uses the server's
 `HOME` from startup, before canonicalization. Other relative paths, `~user`, and
 environment-variable expansion are unsupported. The directory must exist; its canonical
-absolute path is stored in history. Multiple sessions may share it. The shell reads its normal startup
-files. Agents retain their arguments, authentication, and permissions; BonBon injects
-no prompts. Exiting an agent returns to the shell; exiting the shell ends the session.
+absolute path is stored in history. Multiple sessions may share it. The shell reads its
+normal startup files. Agents retain their arguments, authentication, and permissions;
+BonBon injects no prompts. Exiting an agent returns to the shell; exiting the shell ends
+the session.
 
 xterm.js displays server-rendered frames and forwards keyboard input, paste and resize
 requests through the shared stream. The UI sends no provider flags or prompts. Source
@@ -377,13 +406,19 @@ changes from the latest state, at most 20 times per second. Final output is ackn
 before exit. Input receipts use a separate bounded queue.
 
 A new attachment always starts with a full frame. Reconnecting joins as a viewer if
-another view holds control. The server updates PTY size and requests a redraw when
-the controller joins or changes its viewport. An ended view never starts another
-process or invokes native provider resume.
+another view holds control. The server updates PTY size when the controller's dimensions
+change. Reattaching at the same size uses the saved screen without requesting an
+application redraw. An ended view never starts another process or invokes native
+provider resume.
 
 Session listing defaults to ten entries at the protocol level, with a limit of 1–1000;
-the UI requests 100. Ordering follows last recorded activity. Summaries contain ID,
-title, workspace, update time, status, and view count.
+the UI requests 100. Ordering follows the latest terminal input, output, or run lifecycle
+event (`start`, `run`, or interruption `notice`), newest first. Sessions without these
+events use their creation time. Event sequence breaks timestamp ties. Viewing, resizing,
+renaming, saving drafts, attachments, terminal replies, and saved screens do not change
+recency. Fresh application output still counts, including output while detached or after
+a real size change. Summaries contain ID, title, project ID (empty for standalone),
+workspace, update time, status, and view count.
 
 Statuses include `starting`, `running`, `exited`, `stopped`, `failed`, and
 `interrupted`. A running process does not imply model activity or readiness. No
@@ -422,7 +457,7 @@ directory do not affect this choice. For all commands, directory selection is
 a directory across builds. Relative paths resolve from the caller's current directory;
 symlinks resolve to the same canonical instance. No data is moved from previous locations.
 SQLite (`history.sqlite`) lives under the selected directory and is created with
-private permissions. The archive stores sessions, runs, and
+private permissions. The archive stores projects, session membership, sessions, runs, and
 append-only events with stable global sequence numbers. New runs set `BONBON_SESSION`
 and canonical `BONBON_DIR` for CLI retrieval, overriding inherited values.
 `BONBON_SESSION` is a value the caller can use in SQL, not an automatic filter. No retrieval
@@ -483,7 +518,10 @@ Go integration tests use temporary instances, real server processes, synthetic s
 commands, and WebSocket views. They cover raw bytes, arguments, resize, Ctrl+C, exit
 status, closed views, background capture, reconnect to the same PID, explicit stop,
 foreground job cleanup, shared workspaces, SQL scope, and interrupted runs without
-input replay. Server tests cover start/stop/restart, instance isolation, stale or
+input replay. Activity fixtures check stable ordering across same-size reattachment
+and control transfer, real PTY resize notifications, and promotion by detached output.
+History tests exclude drafts and display events from recency and its timestamp tie-break.
+Server tests cover start/stop/restart, instance isolation, stale or
 tampered metadata, protocol checks, idle peers, and shutdown with stalled views.
 
 Frame fixtures cover independent viewport sizes, explicit control transfer, blocked
@@ -503,6 +541,11 @@ with an active session, and protection against stopping a replacement instance.
 A manual macOS check confirmed Open UI and Quit BonBon from the standalone executable.
 The shared logo was checked in wide and narrow browser layouts and in 22-point light
 and dark previews. The updated native companion also launched and exited with its server.
+
+Project fixtures cover General and custom launches, canonical folder uniqueness,
+protected General identity, renaming, removal while a session runs, and restart
+persistence. Browser checks verified one-click project launches, standalone creation,
+and project/session renaming. No real agent CLI was used for these project checks.
 
 Storage and composer tests cover read-only queries, cancellation and limits, format
 rejection, persistence, original bytes, draft conflicts, pending submissions, attachment

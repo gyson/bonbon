@@ -130,18 +130,31 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the server.
 After rebuilding, use `server restart` to serve the new embedded assets; restart stops
 active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/11`. `server restart` can replace a server using a
+This change uses protocol `bonbon/12`. `server restart` can replace a server using a
 different session protocol when it supports the same verified shutdown request.
-UI and query commands still require the current protocol. The SQLite format remains
-version 3.
+UI and query commands still require the current protocol. SQLite now uses format 4
+for projects. Older formats are rejected; use a fresh `--dir` instead of restarting this build against an older archive.
 
-The sidebar lists the 100 most recently active sessions and filters their title, ID,
-and workspace. Create a session with an absolute workspace path or `~/project` (`~`
-alone selects the server's home directory). BonBon expands this using the server's
-`HOME` from startup and records the canonical absolute path. Other relative paths,
-`~user`, and environment-variable expansion are not supported. The form asks only for
-a workspace and optional title. Every session opens the server's `$SHELL -i`, falling
-back to `/bin/sh -i`. Run agent commands inside that shell.
+The sidebar groups the 100 most recently active sessions under saved projects, newest
+terminal activity first. Input, output, and run state changes affect order; opening a
+view, resizing it, renaming a session, and saving drafts do not. Use
+**Add project** to save an existing folder, with an optional name that defaults to its
+basename. Git is optional. Click **＋** beside any project to open a new shell there
+immediately. Use **⋯** to rename or remove a custom project. Removing a project moves
+its sessions to **Standalone** and keeps their history, files, and processes.
+**Rename** in a session's toolbar changes its title.
+
+**General** is always available for work across projects. Its working folder is
+`<instance>/workspaces/general`; it cannot be renamed or removed. General and custom
+projects persist in SQLite across browser tabs and server restarts. The same canonical
+folder cannot be saved twice. Multiple sessions can still share a folder.
+
+**New session** lets you choose a saved project, or **Another folder (standalone)**
+for one-off work. Folder paths accept an absolute path or `~/project` (`~` alone
+selects the server's home directory). BonBon expands this using the server's `HOME`
+from startup and records the canonical absolute path. Other relative paths, `~user`,
+and environment-variable expansion are unsupported. Every session opens the server's
+`$SHELL -i`, falling back to `/bin/sh -i`. Run agent commands inside that shell.
 
 Browser launches use the server's environment from startup, with `TERM=xterm-256color`.
 Restart the server from the desired shell after changing PATH or environment settings.
@@ -279,19 +292,20 @@ and preserves their recorded history. They do not block new sessions. BonBon doe
 track or stop processes left behind by a crashed server, and never replays recorded
 input.
 
-All durable BonBon data is stored in SQLite: session details, run state, command and
-workspace metadata, raw terminal recordings, terminal responses, derived searchable
+All durable BonBon data is stored in SQLite: saved projects, session details, run state,
+command and workspace metadata, raw terminal recordings, terminal responses, derived searchable
 text, and derived final terminal screens. There are no
 separate transcript or durable metadata files. `server.json` contains only disposable
 connection information; it is replaced on startup and removed on clean shutdown.
 SQLite's `-wal` and `-shm` files are part of its live storage; copying the main file alone while the server runs can miss committed data.
 `server.log` is diagnostic output. Process lock files hold no conversation data. Workspace
-files and provider-managed credentials stay outside BonBon's data store.
+files, including files created in General, and provider-managed credentials stay
+outside BonBon's database. General is a working folder, not a backup of those files.
 
 Backup and restore are not available in this version. Future cloud backup work is in
 [PLAN.md](docs/PLAN.md). No cloud service or replication process is configured or started.
 
-The current database format is version 3. Other database formats are
+The current database format is version 4. Other database formats are
 rejected; there is no migration path. Use a fresh data directory when the format
 changes, for example:
 
@@ -313,6 +327,9 @@ The race detector needs CGO for tests; deployment builds do not. PTY tests launc
 interactive shells and synthetic commands, verifying raw bytes, command arguments, resize, Ctrl+C,
 exit codes, closed views, background recording, reconnection,
 explicit stop, recent session listing, SQL scope, and independent sessions sharing the same or overlapping workspaces.
+Project fixtures cover canonical folder uniqueness, protected General identity,
+launching shells in both project types, removal while running, and restart persistence.
+These use synthetic shells, not a real agent.
 Storage tests cover read-only SQL, cancellation, result limits, persistence across
 database reopen, and format rejection.
 

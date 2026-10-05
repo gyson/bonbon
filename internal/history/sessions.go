@@ -10,13 +10,16 @@ type RecentSession struct {
 	Updated string
 }
 
-// RecentSessions orders by the last recorded activity, including output emitted
-// while no client is attached. The archive format does not need a second clock.
+// RecentSessions orders by terminal input, output, and run lifecycle activity,
+// including output while detached. View changes and unsent drafts do not count.
 func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
-	rows, err := s.db.Query(`SELECT id,title,workspace,created,
-        COALESCE((SELECT created FROM events WHERE session_id=sessions.id ORDER BY seq DESC LIMIT 1),created) AS updated
-        FROM sessions ORDER BY julianday(updated) DESC,
-        COALESCE((SELECT max(seq) FROM events WHERE session_id=sessions.id),0) DESC,id
+	rows, err := s.db.Query(`SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,''),
+        COALESCE(activity.created,sessions.created) AS updated
+        FROM sessions LEFT JOIN events AS activity ON activity.seq=(
+            SELECT seq FROM events WHERE session_id=sessions.id
+            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+        )
+        ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.id
         LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -24,7 +27,7 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
 	result := []RecentSession{}
 	for rows.Next() {
 		var item RecentSession
-		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.Updated); err != nil {
+		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Updated); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -60,9 +63,9 @@ func (s *Store) LatestRun(id string) (*Run, error) {
 	return &r, err
 }
 
-func (s *Store) CreateSession(title, workspace string) (Session, error) {
-	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now()}
-	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created) VALUES(?,?,?,?)", session.ID, session.Title, session.Workspace, session.Created)
+func (s *Store) CreateSession(title, workspace, projectID string) (Session, error) {
+	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now(), ProjectID: projectID}
+	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created,project_id) VALUES(?,?,?,?,NULLIF(?,''))", session.ID, session.Title, session.Workspace, session.Created, projectID)
 	return session, err
 }
 

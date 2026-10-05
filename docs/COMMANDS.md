@@ -74,7 +74,7 @@ bonbon --dir ~/bonbon-experiment query "SELECT id,title FROM sessions"
 ```
 
 `--dir` is BonBon's instance directory. It does not change the agent's working directory;
-choose the workspace in the UI. Relative instance paths resolve
+choose a saved project or standalone workspace in the UI. Relative instance paths resolve
 from the client's current directory. Paths with symlinks resolve to the same instance.
 
 BonBon sets `BONBON_SESSION` and the canonical `BONBON_DIR` inside each wrapped agent.
@@ -157,7 +157,8 @@ to use the web UI. The command does not launch a browser. See the
 [web UI guide](../README.md#web-ui) for browser launch settings and controls.
 
 **Impact:** creates or opens the selected history archive and appends server output to
-`server.log`. It creates private data and lock files as needed. It starts no shell or agent; create sessions in the UI.
+`server.log`. It creates private data and lock files as needed, saves the built-in
+General project, and creates its `<instance>/workspaces/general` folder. It starts no shell or agent; create sessions in the UI.
 The operating system allocates a free port. A second server cannot own the same directory. If startup fails, inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
@@ -259,6 +260,9 @@ implicit session filter, even inside a wrapped agent. Queries go through the ser
 the selected archive. No direct database access or SQLite CLI installation is needed.
 
 ```sh
+# Saved projects.
+bonbon query "SELECT id,name,workspace FROM projects ORDER BY name"
+
 # Recent sessions and their workspace paths.
 bonbon query "SELECT id,title,workspace FROM sessions ORDER BY created DESC LIMIT 10"
 
@@ -279,9 +283,14 @@ The tables are:
 
 | Table | Columns |
 | --- | --- |
-| `sessions` | `id`, `title`, `workspace`, `created` |
+| `projects` | `id`, `name`, `workspace`, `created` |
+| `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
+
+The schema uses format 4. Earlier formats are rejected; select a fresh `--dir`.
+Projects are managed in the UI; there are no project CLI commands. Removing a custom
+project clears session membership but preserves its recorded workspace and history.
 
 IDs are text. Timestamps are UTC text. Event sequence numbers
 are integers shared across the archive. `data` holds original bytes; `text` is derived
