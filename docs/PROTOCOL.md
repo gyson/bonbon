@@ -115,6 +115,12 @@ running processes, clearing only their project membership. Session summaries inc
 `projectId`, an empty string for standalone sessions. Their `workspace` remains the
 canonical path recorded at launch.
 
+`session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
+`notice` event, newest first, falling back to session creation time. `updated` carries
+that timestamp; event sequence breaks timestamp ties. View changes, drafts, attachments,
+terminal replies, and saved screens do not affect order. Reattaching at the same
+dimensions does not resize the PTY or request an application redraw.
+
 `history-instructions` returns a plain-text guide with commands for the verified server's
 executable and instance. Clients may insert it into a draft. Requesting the guide changes
 no history and sends no input. It does not confer extra query scope or indicate that an

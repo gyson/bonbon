@@ -209,15 +209,16 @@ wait:
 				}
 				report(err)
 			case "resize":
-				size := &pty.Winsize{Rows: control.Size.Rows, Cols: control.Size.Cols}
+				if size.Rows == control.Size.Rows && size.Cols == control.Size.Cols {
+					// A new view gets the server's current screen. Reattaching at
+					// the same size must not provoke fresh application output.
+					continue
+				}
+				size = &pty.Winsize{Rows: control.Size.Rows, Cols: control.Size.Cols}
 				data, _ := json.Marshal(control.Size)
 				report(appendEvent("resize", data, ""))
+				// The PTY notifies its foreground process when dimensions change.
 				report(resize(tty, size))
-				// Reattachment can keep the same dimensions. Still request a
-				// redraw from the foreground application on the new client.
-				if group := foregroundGroup(tty); group > 0 {
-					syscall.Kill(-group, syscall.SIGWINCH)
-				}
 			case "signal":
 				if syscall.Signal(control.Signal) == syscall.SIGINT {
 					group := foregroundGroup(tty)

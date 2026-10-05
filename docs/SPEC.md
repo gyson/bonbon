@@ -424,13 +424,19 @@ changes from the latest state, at most 20 times per second. Final output is ackn
 before exit. Input receipts use a separate bounded queue.
 
 A new attachment always starts with a full frame. Reconnecting joins as a viewer if
-another view holds control. The server updates PTY size and requests a redraw when
-the controller joins or changes its viewport. An ended view never starts another
-process or invokes native provider resume.
+another view holds control. The server updates PTY size when the controller's dimensions
+change. Reattaching at the same size uses the saved screen without requesting an
+application redraw. An ended view never starts another process or invokes native
+provider resume.
 
 Session listing defaults to ten entries at the protocol level, with a limit of 1–1000;
-the UI requests 100. Ordering follows last recorded activity. Summaries contain ID,
-title, project ID (empty for standalone), workspace, update time, status, and view count.
+the UI requests 100. Ordering follows the latest terminal input, output, or run lifecycle
+event (`start`, `run`, or interruption `notice`), newest first. Sessions without these
+events use their creation time. Event sequence breaks timestamp ties. Viewing, resizing,
+renaming, saving drafts, attachments, terminal replies, and saved screens do not change
+recency. Fresh application output still counts, including output while detached or after
+a real size change. Summaries contain ID, title, project ID (empty for standalone),
+workspace, update time, status, and view count.
 
 Statuses include `starting`, `running`, `exited`, `stopped`, `failed`, and
 `interrupted`. A running process does not imply model activity or readiness. No
@@ -530,7 +536,10 @@ Go integration tests use temporary instances, real server processes, synthetic s
 commands, and WebSocket views. They cover raw bytes, arguments, resize, Ctrl+C, exit
 status, closed views, background capture, reconnect to the same PID, explicit stop,
 foreground job cleanup, shared workspaces, SQL scope, and interrupted runs without
-input replay. Server tests cover start/stop/restart, instance isolation, stale or
+input replay. Activity fixtures check stable ordering across same-size reattachment
+and control transfer, real PTY resize notifications, and promotion by detached output.
+History tests exclude drafts and display events from recency and its timestamp tie-break.
+Server tests cover start/stop/restart, instance isolation, stale or
 tampered metadata, protocol checks, idle peers, and shutdown with stalled views.
 
 Frame fixtures cover independent viewport sizes, explicit control transfer, blocked

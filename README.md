@@ -135,7 +135,9 @@ different session protocol when it supports the same verified shutdown request.
 UI and query commands still require the current protocol. SQLite now uses format 4
 for projects. Older formats are rejected; use a fresh `--dir` instead of restarting this build against an older archive.
 
-The sidebar groups the 100 most recently active sessions under saved projects. Use
+The sidebar groups the 100 most recently active sessions under saved projects, newest
+terminal activity first. Input, output, and run state changes affect order; opening a
+view, resizing it, renaming a session, and saving drafts do not. Use
 **Add project** to save an existing folder, with an optional name that defaults to its
 basename. Git is optional. Click **＋** beside any project to open a new shell there
 immediately. Use **⋯** to rename or remove a custom project. Removing a project moves

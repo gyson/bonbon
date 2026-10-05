@@ -10,13 +10,16 @@ type RecentSession struct {
 	Updated string
 }
 
-// RecentSessions orders by the last recorded activity, including output emitted
-// while no client is attached. The archive format does not need a second clock.
+// RecentSessions orders by terminal input, output, and run lifecycle activity,
+// including output while detached. View changes and unsent drafts do not count.
 func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
-	rows, err := s.db.Query(`SELECT id,title,workspace,created,COALESCE(project_id,''),
-        COALESCE((SELECT created FROM events WHERE session_id=sessions.id ORDER BY seq DESC LIMIT 1),created) AS updated
-        FROM sessions ORDER BY julianday(updated) DESC,
-        COALESCE((SELECT max(seq) FROM events WHERE session_id=sessions.id),0) DESC,id
+	rows, err := s.db.Query(`SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,''),
+        COALESCE(activity.created,sessions.created) AS updated
+        FROM sessions LEFT JOIN events AS activity ON activity.seq=(
+            SELECT seq FROM events WHERE session_id=sessions.id
+            AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
+        )
+        ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.id
         LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
