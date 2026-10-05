@@ -11,12 +11,12 @@ prefix or binary envelope. The limit is 16 MiB per message, including all fragme
 Binary messages, malformed JSON, and multiple JSON values in one message are rejected.
 Terminal bytes use base64 in `data`; this preserves arbitrary bytes and control codes.
 
-This is an early development protocol. The version is `bonbon/14`, checked in the
+This is an early development protocol. The version is `bonbon/15`, checked in the
 server greeting and first request. No WebSocket subprotocol header is required.
 Session operations and health checks reject unsupported versions. Shutdown uses the
 verified server's advertised version, so `server restart` can replace a server after a
 session protocol change. This requires the same greeting and shutdown envelope; there
-is no fallback for previous transports. SQLite format 5 is required; older archives are rejected without migration.
+is no fallback for previous transports. SQLite format 6 is required; older archives are rejected without migration.
 
 ## Connections and requests
 
@@ -26,7 +26,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/14",
+    "protocol": "bonbon/15",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -58,7 +58,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/14",
+    "protocol": "bonbon/15",
     "operation": "session-list",
     "limit": 10
   }
@@ -76,8 +76,9 @@ operations.
 | `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
 | `project-remove` | `project` ID | `result`, containing `removed`; sessions become standalone |
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
-| `session-list` | `limit`, default 10, range 1–1000 | `result`, containing session summaries |
+| `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
+| `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`; rejects active runs and unfinished launch claims |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata; omit `draft` to read |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
@@ -85,7 +86,7 @@ operations.
 | `settings-get` | none | `result`, saved settings and revision |
 | `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
 | `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
-| `project-draft` | `project` ID | `result`, the project’s existing unfinished preparation or a new one with snapshotted defaults; starts no process |
+| `project-draft` | `project` ID | `result`, a new independent draft with snapshotted defaults; starts no process |
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session; supplying configuration saves against its revision |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream; claims launch once |
 | `worktree-remove` | `session` | `result`, containing `removed`; preserves branch and history |
@@ -93,8 +94,9 @@ operations.
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`.
-RPC requests have no IDs, connection multiplexing, or automatic retries. Reopening a
-project reuses its one unfinished draft, including after a lost reply. Never repeat a
+RPC requests have no IDs, connection multiplexing, or automatic retries. Each
+project-draft request creates a new draft. After a lost reply, inspect session-list
+before creating another. Reopen existing drafts by ID through session-config. Never repeat a
 session-start after an uncertain result; inspect session-config and reattach instead.
 
 New sessions start with project-draft, session-config, then session-start. The project
@@ -113,9 +115,9 @@ canonical paths. Multiple sessions may share the same or overlapping workspace.
 An empty title defaults to the tool and workspace names. Terminal size is
 `{"rows":24,"cols":80}`, with 2–512 columns and 1–256 rows.
 
-Protocol 14 keeps one unfinished draft per project and removes direct session creation
-and per-session workspace or command overrides.
-SQLite format 5 stores these records alongside projects and session membership. Use a fresh
+Protocol 15 supports multiple drafts per project, archive/restore, and paginated
+collection search. Project records no longer contain a draftId. Session records and
+summaries include an archived boolean. SQLite format 6 stores this independent flag. Use a fresh
 instance directory for older archives; there is no migration. Rebuild, start the new
 server, and reload the browser.
 
@@ -124,10 +126,20 @@ must contain 1–200 characters without control characters. General has ID `gene
 the server creates it at startup under `<instance>/workspaces/general`. Rename and
 remove requests for General fail. Removing a custom project preserves sessions and
 running processes, clearing only their project membership. Session summaries include
-`projectId`, an empty string after their project is removed. Project-list includes
-`draftId` when a project has an unfinished draft. Session-list excludes those project
-drafts; drafts detached by project removal remain visible under Standalone. Their `workspace` remains the
-canonical path recorded at launch.
+`projectId`, an empty string after their project is removed. Session-list includes
+unstarted drafts; drafts detached by project removal remain under Standalone. Their
+`workspace` remains the saved canonical path.
+
+`session-list` selects only the requested archive collection, then applies query,
+ordering, limit, and offset. Search matches session titles, IDs, workspace paths,
+and project names/paths using SQLite's ASCII case-insensitive matching. The query is
+a literal substring, not SQL or a wildcard expression; it does not search event text.
+
+`session-archive` changes visibility without deleting records or files and without
+changing run/preparation state. It shares the launch lock with session-start and
+rejects live sessions and unfinished launch claims. Archived drafts remain editable,
+but session-start rejects them until restored. Restoration starts no process.
+Direct reads, composer operations, and read-only SQL can still access archived data.
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
 `notice` event, newest first, falling back to session creation time. `updated` carries
@@ -285,13 +297,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/14") {
+    if (message.server.protocol !== "bonbon/15") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/14", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/15", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

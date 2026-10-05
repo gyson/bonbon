@@ -3,34 +3,51 @@ package history
 import (
 	"database/sql"
 	"errors"
+	"strings"
 )
 
-type RecentSession struct {
+type ListedSession struct {
 	Session
 	Updated string
 }
 
-// RecentSessions orders by terminal input, output, and run lifecycle activity,
+type SessionFilter struct {
+	Limit    int
+	Offset   int
+	Archived bool
+	Query    string
+}
+
+// ListSessions orders by terminal input, output, and run lifecycle activity,
 // including output while detached. View changes and unsent drafts do not count.
-func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
-	rows, err := s.db.Query(`SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,''),
+// Search and archive filtering happen before pagination, including old sessions.
+func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
+	if filter.Limit == 0 {
+		filter.Limit = 10
+	}
+	if filter.Limit < 1 || filter.Limit > 1000 || filter.Offset < 0 || len(filter.Query) > 800 {
+		return nil, errors.New("invalid session filter: limit must be 1–1000, offset nonnegative, and query at most 800 bytes")
+	}
+	query := strings.TrimSpace(filter.Query)
+	rows, err := s.db.Query(`SELECT sessions.id,title,workspace,sessions.created,COALESCE(project_id,''),archived,
         COALESCE(activity.created,sessions.created) AS updated
         FROM sessions LEFT JOIN events AS activity ON activity.seq=(
             SELECT seq FROM events WHERE session_id=sessions.id
             AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
         )
-        WHERE project_id IS NULL OR NOT EXISTS (
-            SELECT 1 FROM preparations WHERE session_id=sessions.id AND state='draft'
-        )
+        WHERE archived=? AND (?='' OR instr(lower(title),lower(?))>0
+            OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
+            OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
+                AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
         ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.id
-        LIMIT ?`, limit)
+        LIMIT ? OFFSET ?`, filter.Archived, query, query, query, query, query, query, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, err
 	}
-	result := []RecentSession{}
+	result := []ListedSession{}
 	for rows.Next() {
-		var item RecentSession
-		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Updated); err != nil {
+		var item ListedSession
+		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Archived, &item.Updated); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -51,6 +68,32 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
 		}
 	}
 	return result, nil
+}
+
+// Archiving changes visibility only. The transaction also protects callers from
+// archiving recorded active runs or an unfinished launch claim.
+func (s *Store) SetSessionArchived(id string, archived bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if archived {
+		var active bool
+		err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM runs WHERE session_id=? AND status IN ('starting','running'))
+            OR EXISTS(SELECT 1 FROM preparations WHERE session_id=? AND
+                (state='creating' OR (state='launched' AND NOT EXISTS(SELECT 1 FROM runs WHERE session_id=?))))`, id, id, id).Scan(&active)
+		if err != nil {
+			return err
+		}
+		if active {
+			return errors.New("stop the session before archiving it")
+		}
+	}
+	if err = changedRow(tx.Exec("UPDATE sessions SET archived=? WHERE id=?", archived, id)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Session(id string) (Session, error) {

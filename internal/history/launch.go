@@ -123,19 +123,6 @@ func revisionChanged(result sql.Result, err error) error {
 	return err
 }
 
-func (s *Store) ProjectDraft(project string) (Session, error) {
-	var id string
-	err := s.db.QueryRow(`SELECT sessions.id FROM sessions JOIN preparations ON session_id=sessions.id
- WHERE project_id=? AND state='draft' ORDER BY sessions.created DESC LIMIT 1`, project).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, ErrNotFound
-	}
-	if err != nil {
-		return Session{}, err
-	}
-	return s.Session(id)
-}
-
 func (s *Store) CreatePreparation(title, workspace, project string, p Preparation) (Session, error) {
 	if project == "" {
 		return Session{}, errors.New("choose a project before preparing a session")
@@ -155,18 +142,6 @@ func (s *Store) CreatePreparation(title, workspace, project string, p Preparatio
 		return Session{}, err
 	}
 	defer tx.Rollback()
-	// Reopening a project, including from another tab, resumes its one draft.
-	// The single archive connection serializes this lookup and creation.
-	var existing string
-	err = tx.QueryRow(`SELECT sessions.id FROM sessions JOIN preparations ON session_id=sessions.id
- WHERE project_id=? AND state='draft' ORDER BY sessions.created DESC LIMIT 1`, project).Scan(&existing)
-	if err == nil {
-		tx.Rollback()
-		return s.Session(existing)
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return Session{}, err
-	}
 	session := Session{ID: ID(), Title: title, Workspace: workspace, ProjectID: project, Created: Now()}
 	p.Revision, p.State = 1, "draft"
 	data, err := json.Marshal(p)

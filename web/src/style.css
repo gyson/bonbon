@@ -88,7 +88,7 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 [hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @media (max-width: 950px) { .sidebar { width: 225px; } .toolbar { padding: 18px; flex-wrap: wrap; } #session-view { padding: 16px; } .actions { flex-wrap: wrap; } }
-@media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } .brand { padding-bottom: 2px; } .section-heading, .instance, .search-label { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .welcome-notes { margin-top: 40px; gap: 20px; } .toolbar { min-height: 90px; } }
+@media (max-width: 620px) { body { flex-direction: column; overflow: auto; height: auto; min-height: 100dvh; } .sidebar { width: 100%; border-right: 0; padding: 14px; gap: 10px; } .brand { padding-bottom: 2px; } .section-heading, .instance { display: none; } #sessions { max-height: 145px; } main { overflow: visible; } #session-view { height: 650px; flex: none; } .welcome { padding: 36px 24px; } .welcome-notes { margin-top: 40px; gap: 20px; } .toolbar { min-height: 90px; } }
 
 .add-project { background: transparent; text-align: left; border-style: dashed; font-size: 12px; }
 .project-group { margin-bottom: 16px; }
@@ -96,7 +96,11 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .project-toggle { flex: 0 0 24px; font-size: 12px; }
 .project-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
 .project-toggle, .project-action { background: transparent; border-color: transparent; padding: 6px; }
-.project-draft { font-size: 9px; color: #62816c; padding: 0 4px; }
+.session-scopes { display: flex; gap: 6px; }
+.session-scopes button { flex: 1; font-size: 12px; background: transparent; }
+.session-scopes button[aria-pressed="true"] { background: #fff; border-color: #a8b7ae; }
+.session-pages { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 11px; }
+.session-pages button { padding: 6px 8px; font-size: 11px; }
 .project-action { font-size: 18px; line-height: 1; }
 .project-sessions { padding-left: 10px; border-left: 1px solid #dce1d8; margin: 5px 0 0 9px; }
 .project-empty { font-size: 11px; color: #7b857c; line-height: 1.6; margin: 9px 6px; }

@@ -15,7 +15,6 @@ type Project struct {
 	Name      string `json:"name"`
 	Workspace string `json:"workspace"`
 	Created   string `json:"created"`
-	DraftID   string `json:"draftId,omitempty"`
 }
 
 func validName(name string) (string, error) {
@@ -34,10 +33,7 @@ func (s *Store) EnsureGeneral(workspace string) error {
 }
 
 func (s *Store) Projects() ([]Project, error) {
-	rows, err := s.db.Query(`SELECT id,name,workspace,created,COALESCE((
- SELECT sessions.id FROM sessions JOIN preparations ON session_id=sessions.id
- WHERE sessions.project_id=projects.id AND preparations.state='draft'
- ORDER BY sessions.created DESC LIMIT 1),'') FROM projects
+	rows, err := s.db.Query(`SELECT id,name,workspace,created FROM projects
  ORDER BY id='general' DESC,name COLLATE NOCASE,id`)
 	if err != nil {
 		return nil, err
@@ -46,7 +42,7 @@ func (s *Store) Projects() ([]Project, error) {
 	result := []Project{}
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Workspace, &p.Created, &p.DraftID); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Workspace, &p.Created); err != nil {
 			return nil, err
 		}
 		result = append(result, p)

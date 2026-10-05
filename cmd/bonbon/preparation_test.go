@@ -181,14 +181,14 @@ func TestProjectDraftSurvivesRestartAndBecomesSession(t *testing.T) {
 	rpc(protocol.Request{Operation: "composer-draft", Session: original.ID, Draft: &protocol.Draft{Text: "unsent project message", Attachments: []int64{file.ID}}}, nil)
 	config := preparationConfig(*original.Preparation)
 	rpc(protocol.Request{Operation: "session-config", Session: original.ID, Name: "Saved project draft", Preparation: &config}, &original)
-	if sessions := sessionInfos(t, 100); len(sessions) != 0 {
-		t.Fatal("unstarted drafts entered session list", sessions)
+	if sessions := sessionInfos(t, 100); len(sessions) != 2 {
+		t.Fatal("unstarted drafts missing from session list", sessions)
 	}
 	if output, err := testCommand("server", "restart").CombinedOutput(); err != nil {
 		t.Fatalf("restart: %s %v", output, err)
 	}
 	var restored history.Session
-	rpc(protocol.Request{Operation: "project-draft", Project: first.ID}, &restored)
+	rpc(protocol.Request{Operation: "session-config", Session: original.ID}, &restored)
 	if restored.ID != original.ID || restored.Title != original.Title || *restored.Preparation != *original.Preparation {
 		t.Fatal("lost draft settings", restored)
 	}
@@ -212,11 +212,11 @@ func TestProjectDraftSurvivesRestartAndBecomesSession(t *testing.T) {
 	if composer.Draft.Text != "unsent project message" {
 		t.Fatal("start consumed draft", composer)
 	}
-	rpc(protocol.Request{Operation: "project-draft", Project: second.ID}, &restored)
+	rpc(protocol.Request{Operation: "session-config", Session: other.ID}, &restored)
 	if restored.ID != other.ID {
 		t.Fatal("another project's draft changed")
 	}
-	if sessions := sessionInfos(t, 100); len(sessions) != 1 || sessions[0].ID != original.ID {
+	if sessions := sessionInfos(t, 100); len(sessions) != 3 {
 		t.Fatal("wrong started sessions", sessions)
 	}
 	rpc(protocol.Request{Operation: "project-remove", Project: first.ID}, nil)

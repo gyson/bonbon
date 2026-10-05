@@ -11,17 +11,19 @@
 <body>
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></div>
-    <label class="search-label"><span class="sr-only">Filter projects and sessions</span><input id="filter" type="search" placeholder="Filter projects and sessions…"></label>
-    <div class="section-heading"><span>PROJECTS · RECENT SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
+    <div class="session-scopes" aria-label="Session collection"><button id="sessions-open" aria-pressed="true">Sessions</button><button id="archives-open" aria-pressed="false">Archived</button></div>
+    <label class="search-label"><span class="sr-only">Search projects and sessions</span><input id="filter" type="search" maxlength="200" placeholder="Search names and folders…"></label>
+    <div class="section-heading"><span id="list-heading">PROJECTS · SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
     <button id="add-project" class="add-project">＋ Add project</button>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
+    <div id="session-pages" class="session-pages" hidden><button id="sessions-previous">Previous</button><span id="sessions-page"></span><button id="sessions-next">Next</button></div>
     <button id="settings-open">Settings</button>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
   <main>
     <header class="toolbar">
       <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div>
-      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
+      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>
     <section id="welcome" class="welcome">
@@ -45,7 +47,7 @@
           </div>
           <p id="launch-repository" class="form-help"></p>
           <p id="launch-error" class="form-error" role="alert" hidden></p>
-          <div class="launch-actions"><p class="form-help">Your draft stays with this project until you start. Shell starts without a preset command.</p><button id="launch-submit" class="primary" type="submit">Start session ↗</button></div>
+          <div class="launch-actions"><p class="form-help">Your draft and message save automatically. Reopen this draft from the sidebar. Shell starts without a preset command.</p><button id="launch-submit" class="primary" type="submit">Start session ↗</button></div>
         </form>
       </section>
       <div id="terminal-pane">

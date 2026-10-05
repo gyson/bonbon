@@ -1,6 +1,6 @@
 import type { Project, SessionInfo } from './protocol.js';
 
-// Project matches expose its recent sessions; session matches keep their group.
+// Group the server-filtered page; keep empty matching projects available for new drafts.
 export function sessionGroups(projects: Project[], sessions: SessionInfo[], filter: string) {
   const query = filter.trim().toLowerCase();
   const matches = (session: SessionInfo) => `${session.title} ${session.workspace} ${session.id}`.toLowerCase().includes(query);

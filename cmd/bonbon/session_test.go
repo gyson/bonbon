@@ -256,7 +256,7 @@ func TestShellRunsCommandWithArgumentsBytesAndResize(t *testing.T) {
 	c := launchAgent(t, workspace, args...)
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, err := store.RecentSessions(1000)
+	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
 	if err != nil || len(sessions) != 1 {
 		t.Fatal(sessions, err)
 	}
@@ -330,7 +330,7 @@ func TestViewClosureKeepsProcessAndHistory(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, _ := store.RecentSessions(1000)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
 	pid := sessions[0].Run.PID
 	c.Close()
 	if err := syscall.Kill(pid, 0); err != nil {
@@ -374,8 +374,8 @@ func TestMissingShellKeepsProjectDraft(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("missing shell was not rejected")
 	}
-	if sessions := sessionInfos(t, 10); len(sessions) != 0 {
-		t.Fatal("failed lookup created session", sessions)
+	if sessions := sessionInfos(t, 10); len(sessions) != 1 || sessions[0].Status != "draft" {
+		t.Fatal("failed lookup did not retain draft", sessions)
 	}
 }
 
@@ -405,7 +405,7 @@ func TestConcurrentShellsShareSameAndOverlappingWorkspaces(t *testing.T) {
 		}
 	}
 	store := archive(t, dataDir)
-	sessions, err := store.RecentSessions(1000)
+	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
 	if err != nil || len(sessions) != len(paths) {
 		t.Fatal(sessions, err)
 	}
@@ -467,7 +467,7 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	}
 	c := launchAgent(t, workspace, "scope")
 	c.wait(t, 0)
-	sessions, err := store.RecentSessions(1000)
+	sessions, err := store.ListSessions(history.SessionFilter{Limit: 1000})
 	if err != nil || len(sessions) != 2 {
 		t.Fatal("wrong session count", sessions, err)
 	}
@@ -516,7 +516,7 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	first := launchAgent(t, t.TempDir(), "stream")
 	waitFor(t, func() bool { return strings.Contains(first.text(), "READY") })
 	store := archive(t, dataDir)
-	sessions, _ := store.RecentSessions(1000)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
 	id, pid := sessions[0].ID, sessions[0].Run.PID
 	first.Close()
 	waitFor(t, func() bool { return sessionInfos(t, 10)[0].Viewers == 0 })
@@ -558,7 +558,7 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	if !reflect.DeepEqual(events, after) {
 		t.Fatal("ended view changed history")
 	}
-	sessions, _ = store.RecentSessions(1000)
+	sessions, _ = store.ListSessions(history.SessionFilter{Limit: 1000})
 	if len(sessions) != 1 || sessions[0].Run.PID != pid {
 		t.Fatal("ended view created a run", sessions)
 	}

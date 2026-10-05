@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"bonbon/internal/client"
+	"bonbon/internal/history"
 	"bonbon/internal/instance"
 )
 
@@ -71,7 +72,7 @@ func TestServerLifecycleAndRestartStopsActiveRun(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	sessions, _ := store.RecentSessions(1000)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
 	pid := sessions[0].Run.PID
 	output, err := testCommand("--dir", directory, "server", "restart").CombinedOutput()
 	if err != nil {
@@ -214,7 +215,7 @@ func TestViewDisconnectLeavesSessionAndServerRunning(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	sessions, _ := store.RecentSessions(1000)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
 	pid := sessions[0].Run.PID
 	c.Close()
 	if err := syscall.Kill(pid, 0); err != nil {
@@ -241,7 +242,7 @@ func TestServerStopWaitsForDetachedSession(t *testing.T) {
 	c := launchAgent(t, t.TempDir(), "wait")
 	waitFor(t, func() bool { return strings.Contains(c.text(), "READY") })
 	store := archive(t, directory)
-	sessions, _ := store.RecentSessions(1000)
+	sessions, _ := store.ListSessions(history.SessionFilter{Limit: 1000})
 	c.Close()
 	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
 		t.Fatalf("stop: %s %v", output, err)

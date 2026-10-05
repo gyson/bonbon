@@ -17,11 +17,6 @@ func (s *Server) prepareProject(ctx context.Context, projectID string) (history.
 	if err != nil {
 		return history.Session{}, err
 	}
-	if existing, err := s.store.ProjectDraft(projectID); err == nil {
-		return existing, nil
-	} else if !errors.Is(err, history.ErrNotFound) {
-		return history.Session{}, err
-	}
 	settings, err := s.store.Settings()
 	if err != nil {
 		return history.Session{}, err
@@ -85,6 +80,9 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		return session, nil, err
 	}
 	p := session.Preparation
+	if session.Archived {
+		return session, nil, errors.New("restore this draft before starting it")
+	}
 	if p == nil || p.State != "draft" || p.Revision != revision {
 		return session, nil, errors.New("session already started or launch settings changed; reload the session")
 	}

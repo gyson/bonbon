@@ -25,6 +25,7 @@ export class PreparationEditor {
   private checking = false;
   private available = false;
   private blocked = false;
+  private archived = false;
 
   constructor(private readonly host: {
     server(): ServerInfo | null;
@@ -76,11 +77,13 @@ export class PreparationEditor {
     await this.flush(); this.panel.hidden = true; this.session = null; this.inspecting++;
   }
 
-  controls(blocked = this.blocked): void {
+  controls(blocked = this.blocked, archived = this.archived): void {
     this.blocked = blocked;
+    this.archived = archived;
     for (const field of this.form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input,select')) field.disabled = blocked;
     this.worktree.disabled = blocked || !this.available;
-    this.submit.disabled = blocked || this.checking || !this.session || (this.worktree.checked && !this.available);
+    this.submit.disabled = blocked || archived || this.checking || !this.session || (this.worktree.checked && !this.available);
+    this.submit.textContent = archived ? 'Restore before starting' : 'Start session ↗';
   }
 
   private inspect(): Promise<void> {

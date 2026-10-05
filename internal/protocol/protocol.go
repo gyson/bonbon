@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/14"
+const Version = "bonbon/15"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -37,6 +37,9 @@ type PreparationConfig struct {
 }
 
 type Request struct {
+	Archived    bool               `json:"archived,omitempty"`
+	Offset      int                `json:"offset,omitempty"`
+	Query       string             `json:"query,omitempty"`
 	Settings    *history.Settings  `json:"settings,omitempty"`
 	Preparation *PreparationConfig `json:"preparation,omitempty"`
 	Revision    int64              `json:"revision,omitempty"`
@@ -83,6 +86,7 @@ type Composer struct {
 }
 
 type SessionInfo struct {
+	Archived    bool                 `json:"archived"`
 	Preparation *history.Preparation `json:"preparation,omitempty"`
 	Worktree    *history.Worktree    `json:"worktree,omitempty"`
 	ProjectID   string               `json:"projectId"`

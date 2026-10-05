@@ -13,6 +13,14 @@ import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
 
 const elements = {
+  'sessions-open': element('sessions-open', HTMLButtonElement),
+  'archives-open': element('archives-open', HTMLButtonElement),
+  'list-heading': element('list-heading', HTMLElement),
+  'session-pages': element('session-pages', HTMLElement),
+  'sessions-previous': element('sessions-previous', HTMLButtonElement),
+  'sessions-next': element('sessions-next', HTMLButtonElement),
+  'sessions-page': element('sessions-page', HTMLElement),
+  'archive-session': element('archive-session', HTMLButtonElement),
   'launch-summary': element('launch-summary', HTMLElement),
   'settings-open': element('settings-open', HTMLButtonElement),
   'settings-close': element('settings-close', HTMLButtonElement),
@@ -61,6 +69,7 @@ const elements = {
 const $ = <K extends keyof typeof elements>(id: K): typeof elements[K] => elements[id];
 
 interface SessionView {
+  archived?: boolean;
   preparation?: Preparation;
   worktree?: Worktree;
   projectId?: string;
@@ -81,6 +90,9 @@ const collapsedProjects = new Set<string>();
 let renderedSidebar = '';
 let selected: SessionView | null = null;
 let busy = false, refreshing = false;
+let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+const pageSize = 100;
 const composer = new Composer({
   server: () => server,
   peer: () => connection?.peer ?? null,
@@ -96,7 +108,7 @@ const preparation = new PreparationEditor({
   changed(session) {
     if (selected?.id === session.id) {
       selected = { ...selected, ...session };
-      $('session-title').textContent = projects.find(p => p.id === session.projectId)?.name ?? 'Project draft';
+      $('session-title').textContent = session.title || 'Untitled draft';
       $('workspace').textContent = session.workspace;
     }
     void refreshSessions();
@@ -123,7 +135,14 @@ function controls() {
   $('launch-summary').hidden = showingSettings || !launch || selected?.status === 'draft';
   $('launch-summary').textContent = launch ? `${launch.toolName} · ${launch.command || 'Interactive shell'}` : '';
   $('launch-summary').title = $('launch-summary').textContent;
-  preparation.controls(busy);
+  preparation.controls(busy, !!selected?.archived);
+  $('sessions-open').disabled = $('archives-open').disabled = busy || !server;
+  $('sessions-previous').disabled = busy || refreshing || pageOffset === 0;
+  $('sessions-next').disabled = busy || refreshing || !hasNextPage;
+  $('archive-session').hidden = showingSettings || !selected?.id || ['starting', 'running', 'creating', 'launched'].includes(selected.status);
+  $('archive-session').disabled = busy;
+  $('archive-session').textContent = selected?.archived ? 'Restore' : 'Archive';
+  if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = busy || !server;
   $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active && connection.peer.controlling);
@@ -157,12 +176,12 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
   button.setAttribute('aria-current', selected?.id === session.id ? 'true' : 'false');
   button.title = `${session.title}\n${session.workspace}\n${session.id}\n${session.updated}`;
   const title = document.createElement('strong');
-  title.textContent = session.title || 'Untitled session';
+  title.textContent = session.title || (session.status === 'draft' ? 'Untitled draft' : 'Untitled session');
   const status = document.createElement('span');
   status.className = 'run-state';
   const dot = document.createElement('span');
   dot.className = 'dot' + (['starting', 'running'].includes(session.status) ? ' running' : '');
-  status.append(dot, document.createTextNode(session.status + (session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '')));
+  status.append(dot, document.createTextNode((session.status === 'draft' ? 'Draft' : session.status) + (session.archived ? ' · Archived' : '') + (session.viewers ? ` · ${session.viewers} view${session.viewers === 1 ? '' : 's'}` : '')));
   button.append(title);
   if (showWorkspace) {
     const workspace = document.createElement('small');
@@ -181,11 +200,17 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
 
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
-  const fingerprint = JSON.stringify([projects, sessions, query, selected?.id, selected?.status, showingSettings, [...collapsedProjects]]);
+  const fingerprint = JSON.stringify([projects, sessions, query, archivedList, pageOffset, hasNextPage, selected?.id, selected?.status, showingSettings, [...collapsedProjects]]);
   if (fingerprint === renderedSidebar) { controls(); return; }
   renderedSidebar = fingerprint;
   $('sessions').replaceChildren();
-  const groups = sessionGroups(projects, sessions, query);
+  $('sessions-open').setAttribute('aria-pressed', String(!archivedList));
+  $('archives-open').setAttribute('aria-pressed', String(archivedList));
+  $('list-heading').textContent = archivedList ? 'ARCHIVED SESSIONS' : 'PROJECTS · SESSIONS';
+  $('add-project').hidden = archivedList;
+  $('session-pages').hidden = pageOffset === 0 && !hasNextPage;
+  $('sessions-page').textContent = `Page ${pageOffset / pageSize + 1}`;
+  const groups = sessionGroups(projects, sessions, query).filter(group => !archivedList || group.sessions.length);
   for (const group of groups) {
     const project = group.project;
     const id = project?.id ?? '';
@@ -216,17 +241,11 @@ function renderSessions() {
     };
     update();
     heading.append(toggle, label);
-    if (project) {
-      if (project.draftId) {
-        const draft = document.createElement('span');
-        draft.className = 'project-draft';
-        draft.textContent = 'Draft';
-        heading.append(draft);
-      }
+    if (project && !archivedList) {
       const add = document.createElement('button');
       add.className = 'project-action';
       add.textContent = '＋';
-      add.title = `Open draft in ${name}`;
+      add.title = `New draft in ${name}`;
       add.setAttribute('aria-label', add.title);
       add.onclick = () => action(() => showLaunch(project.id));
       heading.append(add);
@@ -244,7 +263,7 @@ function renderSessions() {
     if (!group.sessions.length) {
       const empty = document.createElement('p');
       empty.className = 'project-empty';
-      empty.textContent = query ? 'No matching recent sessions.' : 'Open a draft with ＋.';
+      empty.textContent = query ? 'No matching sessions.' : pageOffset ? 'No sessions on this page.' : 'Create a draft with ＋.';
       list.append(empty);
     }
     section.append(heading, list);
@@ -253,38 +272,48 @@ function renderSessions() {
   if (!groups.length) {
     const empty = document.createElement('p');
     empty.className = 'muted';
-    empty.textContent = 'No matching projects or recent sessions.';
+    empty.textContent = archivedList ? 'No archived sessions found.' : 'No matching projects or sessions.';
     $('sessions').append(empty);
   }
   controls();
 }
 
 async function refreshSessions() {
-  if (!server || refreshing) return;
+  if (!server) return;
+  const generation = ++refreshGeneration;
+  const selectedId = selected?.id;
   refreshing = true;
   $('refresh').disabled = true;
   try {
-    const [nextProjects, nextSessions] = await Promise.all([
+    const [nextProjects, nextSessions, detail] = await Promise.all([
       call(server, { operation: 'project-list' }),
-      call(server, { operation: 'session-list', limit: 100 }),
+      call(server, { operation: 'session-list', limit: pageSize + 1, offset: pageOffset, archived: archivedList, query: $('filter').value }),
+      selectedId ? call(server, { operation: 'session-config', session: selectedId }) : Promise.resolve(null),
     ]);
+    if (generation !== refreshGeneration) return;
     projects = nextProjects;
-    sessions = nextSessions;
+    hasNextPage = nextSessions.length > pageSize;
+    sessions = nextSessions.slice(0, pageSize);
+    if (detail && selected && selected.id === selectedId) selected.archived = detail.archived;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');
     if (selected && !showingSettings && !preparation.visible) {
-      selected = sessions.find(s => s.id === selected?.id) || selected;
+      if (detail && selected.id === detail.id) selected = { ...selected, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
       $('session-title').textContent = selected.title || 'Untitled session';
       $('workspace').textContent = selected.workspace;
       $('workspace').title = selected.workspace;
     }
     renderSessions();
   } catch (error) {
+    if (generation !== refreshGeneration) return;
     $('connection').textContent = '○ Server unavailable';
     notice(errorMessage(error), 'list');
   } finally {
-    refreshing = false;
-    $('refresh').disabled = false;
+    if (generation === refreshGeneration) {
+      refreshing = false;
+      $('refresh').disabled = false;
+      controls();
+    }
   }
 }
 
@@ -370,21 +399,25 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   await composer.select('');
   notice();
   selected = session;
+  if (archivedList !== !!session.archived) {
+    archivedList = !!session.archived; pageOffset = 0; $('filter').value = '';
+    await refreshSessions();
+  }
   $('welcome').hidden = true;
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
-  $('session-title').textContent = preparing ? projects.find(p => p.id === session.projectId)?.name ?? 'Project draft' : session.title || 'Session';
+  $('session-title').textContent = session.title || (preparing ? 'Untitled draft' : 'Untitled session');
   $('workspace').textContent = session.workspace;
   $('workspace').title = session.workspace;
   $('session-id').textContent = session.id || '';
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
-  history.replaceState(null, '', preparing && session.projectId ? `#project/${encodeURIComponent(session.projectId)}` : session.id ? `#${encodeURIComponent(session.id)}` : '');
+  history.replaceState(null, '', session.id ? `#${encodeURIComponent(session.id)}` : '');
   $('terminal-pane').hidden = preparing;
   sessionSplit.setEnabled(false);
   if (preparing && session.id) {
-    $('status').textContent = 'Draft';
-    await preparation.open({ ...session, id: session.id, projectId: session.projectId ?? '' });
+    $('status').textContent = session.archived ? 'Draft · Archived' : 'Draft';
+    await preparation.open({ ...session, archived: !!session.archived, id: session.id, projectId: session.projectId ?? '' });
     await composer.select(session.id);
     renderSessions(); return;
   }
@@ -458,9 +491,25 @@ async function showLaunch(projectId: string): Promise<void> {
   if (!server) return;
   await leaveView();
   const session = await call(server, { operation: 'project-draft', project: projectId });
+  archivedList = false; pageOffset = 0; $('filter').value = '';
   collapsedProjects.delete(projectId);
   await openSession({ ...session, status: 'draft' });
   await refreshSessions();
+}
+
+async function showWelcome(): Promise<void> {
+  await leaveView();
+  await preparation.close();
+  await composer.select('');
+  selected = null;
+  terminal?.dispose(); terminal = null; fit = null;
+  sessionSplit.setEnabled(false);
+  $('session-view').hidden = true;
+  $('welcome').hidden = false;
+  $('session-title').textContent = 'Your workspace';
+  $('workspace').textContent = 'A home for your terminal sessions.';
+  $('status').hidden = true;
+  history.replaceState(null, '', location.pathname);
 }
 
 function showProject(project: Project | null = null) {
@@ -480,6 +529,30 @@ function showProject(project: Project | null = null) {
 
 async function initialize() {
   controls();
+  $('archive-session').onclick = () => action(async () => {
+    if (!server || !selected?.id) return;
+    await preparation.flush();
+    await composer.flush();
+    const archived = !selected.archived;
+    await call(server, { operation: 'session-archive', session: selected.id, archived });
+    selected.archived = archived;
+    if (archived) await showWelcome();
+    else {
+      archivedList = false; pageOffset = 0; $('filter').value = '';
+      collapsedProjects.delete(selected.projectId ?? '');
+      await openSession(selected);
+    }
+    await refreshSessions();
+    notice(archived ? 'Session archived. Find it in Archived and restore it any time.' : 'Session restored.');
+  });
+  for (const [button, archived] of [[$('sessions-open'), false], [$('archives-open'), true]] as const) {
+    button.onclick = () => action(async () => {
+      archivedList = archived; pageOffset = 0;
+      await refreshSessions();
+    });
+  }
+  $('sessions-previous').onclick = () => action(async () => { pageOffset = Math.max(0, pageOffset - pageSize); await refreshSessions(); });
+  $('sessions-next').onclick = () => action(async () => { pageOffset += pageSize; await refreshSessions(); });
   $('settings-open').onclick = () => action(async () => {
     await leaveView();
     await settingsView.open();
@@ -555,7 +628,13 @@ async function initialize() {
     });
   };
   $('refresh').onclick = refreshSessions;
-  $('filter').oninput = renderSessions;
+  $('filter').oninput = () => {
+    pageOffset = 0;
+    // Invalidate in-flight results before the debounce completes.
+    refreshGeneration++;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
+  };
   $('take-control').onclick = () => {
     if (!terminal || !connection?.ready) return;
     connection?.peer?.send({ type: 'take-control', size: boundedSize(fit?.proposeDimensions() ?? terminal) });
@@ -581,8 +660,7 @@ async function initialize() {
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
     const id = decodeURIComponent(location.hash.slice(1));
-    if (id.startsWith('project/')) await action(() => showLaunch(id.slice('project/'.length)));
-    else if (id) await action(() => openSession(sessions.find(s => s.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' }));
+    if (id) await action(() => openSession(sessions.find(s => s.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' }));
     setInterval(() => { if (!document.hidden && !busy) refreshSessions(); }, 5000);
   } catch (error) {
     server = null;

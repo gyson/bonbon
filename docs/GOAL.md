@@ -48,7 +48,7 @@ Keep deployment self-contained; a desktop shell can come later.
 
 Keep the BonBon CLI small: `ui` opens the home page, `server start/stop/restart` manages
 the background server, `query` reads history, and `update` installs a new release.
-Session operations and terminal interaction belong in the UI. New sessions start from a saved project, which keeps its unfinished draft; `bonbon ui` needs no path
+Session operations and terminal interaction belong in the UI. New sessions start from a saved project, which keeps independent unfinished drafts; `bonbon ui` needs no path
 or session arguments. Shell launches use the server's environment.
 
 Closing a browser view leaves work and recording running. Reopening a live session
