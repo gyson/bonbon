@@ -4,14 +4,16 @@ BonBon aims to provide a desktop workspace for multiple agent CLI tools, with du
 
 ## Development stage
 
-BonBon is in early development. Breaking changes to commands, APIs, configuration,
-and storage formats are allowed. Backward compatibility is not a requirement.
+BonBon is in daily use. Existing databases must remain usable after upgrades.
+Commands and APIs may still change, but durable data needs a supported migration path.
 
 - Prefer clean, readable code for the current web workflow.
 - Remove obsolete code, fields, tests, dependencies, and documentation when the design changes.
-- Do not retain legacy implementations, compatibility shims, deprecated aliases, or migrations only to support earlier development versions.
+- Do not retain obsolete runtime implementations or deprecated aliases. Keep released database migrations so users can skip releases without losing data.
 - Keep abstractions small and tied to current behavior. Implement planned features only when needed; do not retain unused scaffolding for them.
-- Document format breaks clearly. Reject unsupported data formats instead of silently modifying existing data.
+- Embed ordered SQL migrations from `internal/history/migrations/` in every binary. Apply pending migrations automatically at server startup in one transaction, before serving requests. Preserve history, original bytes, stable IDs, event sequences, settings, drafts, and attachments.
+- For schema or durable data format changes, add the next migration and bump `schemaVersion`. Never edit a released migration. Keep frozen old-schema fixtures and test upgrades, reopen, rollback, and concurrent opens.
+- Reject unknown and newer database formats without changing their contents. Document the supported range and upgrade behavior; never require a fresh database for a supported upgrade. Database downgrades are not supported.
 
 ## Start here
 
@@ -85,7 +87,7 @@ The following guidance applies when building these features; it does not describ
 
 ## Invariants to preserve
 
-These describe current correctness and the behavior required when future features are added. They do not require compatibility with earlier development versions.
+These describe current correctness and the behavior required when future features are added. Preserve them across database upgrades too.
 
 ### History and forks
 

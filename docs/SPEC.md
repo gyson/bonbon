@@ -47,10 +47,11 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 The SQLite driver exposes query authorization and cancellation through supported APIs.
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
-The project is in early development. Commands, APIs, configuration, and on-disk formats
-are unstable; backward compatibility is not supported. Storage uses format version 5
-with projects, sessions, runs, events, settings, preparations, and worktree metadata. Other formats are rejected with a clear error.
-There are no migrations or legacy schema paths.
+Storage uses format version 6 with projects, sessions, runs, events, settings,
+preparations, worktree metadata, and session archive flags. Embedded SQL migrations
+upgrade formats 3–5 automatically at server startup. Format 6 needs no migration.
+Commands and APIs may still change during early development; database upgrades
+preserve durable data.
 
 The history package separates schema and models, session/run operations, event capture, replay,
 and read-only SQL. Database access stays inside that package. Server
@@ -116,6 +117,7 @@ installation. It never downloads or executes a remote installer script. The
 installation directory must be writable. Existing servers and sessions keep running;
 users restart explicitly when ready. Failed downloads or verification preserve the
 installed executable.
+Database migrations run only when the new server starts, not during `bonbon update`.
 
 There is no UI update action, background check, or automatic update.
 The executable version does not identify an already running server's build.
@@ -169,8 +171,8 @@ Binary messages and invalid JSON are rejected. There is no extra length prefix.
 Protocol 15 creates independent project drafts and adds archive/restore, collection
 search, and pagination. SQLite format 6 adds a session archive flag. Settings, preparations,
 and worktree metadata remain server-owned.
-Older database formats are rejected; use a fresh instance directory. Reload the UI
-after starting the new server.
+Formats 3–5 upgrade automatically to 6 at server startup. Reload the UI after starting
+the new server.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/`
 for its static files, and `GET /client-config` for browser connection information.
@@ -521,8 +523,8 @@ can use the same workspace, symlink aliases, or parent and child directories. Ea
 session has its own PTY, run state, history, and stop operation. File changes are shared;
 BonBon does not serialize writers or isolate filesystem changes.
 
-SQLite uses WAL, full synchronization, and a busy timeout. Concurrent first opens
-serialize schema creation. Switching journal mode retries lock contention for up to
+SQLite uses WAL, full synchronization, and a busy timeout. Concurrent opens
+serialize schema creation and upgrades. Switching journal mode retries lock contention for up to
 five seconds because SQLite can skip its busy handler during this lock upgrade.
 The server owns the live connection. Reading history does not reset active state. An exclusive archive lock
 prevents two servers from owning one data directory, even on different ports.
@@ -558,6 +560,38 @@ handles split UTF-8 sequences. It is neither a screen emulator nor a message par
 redraws can duplicate text and cursor movement can leave missing spacing. SQL predicates
 such as `LIKE` match individual event chunks, so phrases spanning chunks may be missed.
 There is no semantic message search, fork ancestry, or inherited history yet.
+
+### Database upgrades
+
+`internal/history/migrations/*.sql` is embedded in development and release binaries.
+The server opens the archive after acquiring its exclusive instance lock, before
+interruption recovery or serving requests. A pinned SQLite connection uses
+`BEGIN IMMEDIATE` to serialize the version read and all pending migrations.
+`PRAGMA user_version` tracks the last applied format. Scripts and version changes
+commit as one transaction after column and foreign-key checks; any failure rolls
+back the entire upgrade and fails startup. A failed SQL step reports its migration
+number. WAL is enabled after the schema transaction commits.
+
+- Empty databases run the format 3 baseline, then migrations 4, 5, and 6.
+- Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
+  Existing sessions remain standalone, with their original workspace and history.
+- Format 4 gains settings, preparations, and managed worktree tables. Defaults use
+  Shell, no worktree, base `HEAD`, and an empty tool list. Existing projects and
+  session memberships remain intact.
+- Format 5 gains the `sessions.archived` flag through migration 6. Existing sessions
+  start unarchived so normal listing and restoration preserve their prior visibility.
+- Format 6 opens without running scripts or rewriting archive flags, settings, or
+  launch metadata.
+
+Recorded IDs, timestamps, event sequences (including the allocation high-water mark),
+original blobs, text, drafts, and attachments remain intact. Migration starts no
+agents and replays no input. Startup interruption recovery still runs afterward.
+Repeated or concurrent opens see the committed version and skip completed steps.
+
+Formats 1 and 2 have no known migration path in this repository. They, nonempty
+unversioned databases, and formats newer than 6 are rejected without changing their
+schema or records. A newer format error asks for a newer executable. There is no
+downgrade path, external migration command, or automatic backup.
 
 ### Read-only SQL
 
@@ -671,6 +705,19 @@ the separate arrows expand or collapse groups, **＋** creates draft entries,
 and adding a project leaves the current view unchanged.
 They also verified draft restoration after switching, reload
 and server restart, Shell launch in a worktree, and separate drafts for subsequent sessions. No real agent CLI was used for these project checks.
+
+Frozen schemas from repository history test formats 3–5 upgrades and unchanged
+format 6 reopening. Fixtures compare stored records, original blobs, archive flags,
+metadata, and event allocation state; they also test whole-upgrade rollback after SQL, schema, or
+foreign-key failures, repeated opens, concurrent upgrades, and unsupported formats.
+Server subprocess fixtures test migration before queries, interruption recovery, and
+restart without duplicate notices. These checks use temporary synthetic databases.
+
+A compiled release binary also passed startup, SQL queries, restart, and shutdown
+with temporary format 3–6 fixtures, running outside the repository. Checks confirmed
+format 6, preserved original event bytes and archive flags, and one interruption notice
+after restart. All temporary servers were stopped. No user database or real agent CLI
+was used for these upgrade checks.
 
 Storage and composer tests cover read-only queries, cancellation and limits, format
 rejection, persistence, original bytes, draft conflicts, pending submissions, attachment

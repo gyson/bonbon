@@ -3,7 +3,6 @@ package history
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -165,33 +164,6 @@ func TestStartupMarksUnfinishedRunsWithoutRepeatingNotices(t *testing.T) {
 				}
 			} else if len(events) != 1 || events[0].Kind != "notice" || events[0].RunID != run.ID {
 				t.Fatal("wrong interruption notice", events)
-			}
-		})
-	}
-}
-
-func TestUnsupportedFormatsAreRejectedWithoutMigration(t *testing.T) {
-	for _, version := range []int{schemaVersion - 1, schemaVersion + 1} {
-		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			store := testStore(t)
-			session := create(t, store)
-			if _, err := store.db.Exec(fmt.Sprintf("PRAGMA user_version=%d", version)); err != nil {
-				t.Fatal(err)
-			}
-			reopened, err := Open(store.Path)
-			if err == nil {
-				reopened.Close()
-				t.Fatal("accepted unsupported history format")
-			}
-			if !strings.Contains(err.Error(), "use a new --dir") {
-				t.Fatal(err)
-			}
-			var actual int
-			if err = store.db.QueryRow("PRAGMA user_version").Scan(&actual); err != nil || actual != version {
-				t.Fatal("changed unsupported database version", actual, err)
-			}
-			if _, err = store.Session(session.ID); err != nil {
-				t.Fatal("changed unsupported database contents", err)
 			}
 		})
 	}

@@ -4,10 +4,12 @@ Status: Intended product. The current focus is a local server with a web workspa
 
 ## Development stage
 
-This is an early development project. Prefer a clean, readable implementation of
-the current workflow over compatibility with earlier versions. Commands, APIs,
-configuration, and storage formats may change freely. Do not preserve obsolete
-code or add compatibility layers and migrations for development prototypes.
+BonBon is used for daily work. Upgrades must keep existing databases usable and
+preserve recorded history, settings, and drafts. Ship database migrations inside the
+release binary and apply them automatically when the new server starts. Users should
+not need a fresh database or separate migration tools when upgrading supported versions.
+Commands and APIs can still evolve. Keep the current implementation clean while
+retaining the migrations needed to preserve durable data across releases.
 
 ## Why this project exists
 
@@ -65,7 +67,7 @@ Keep continuation semantics clear: live attachment, verified native CLI resume, 
 
 Provide a general-purpose read-only `bonbon query SQL` command for listing, searching,
 and reading recorded data. SQL chooses the scope, with no automatic session filter.
-Use the UI to browse sessions. Keep durable BonBon data in SQLite. Defer backup and recovery features to the cloud backup plan. Compatibility with earlier development formats is not required. History imports, native agent attachments, and a richer chat interface remain goals after the shared terminal workflow is useful.
+Use the UI to browse sessions. Keep durable BonBon data in SQLite and preserve it across upgrades. Defer backup and recovery features to the cloud backup plan. History imports, native agent attachments, and a richer chat interface remain goals after the shared terminal workflow is useful.
 
 ## Future workspace interface
 
@@ -141,6 +143,10 @@ derived text, attachments, and drafts. Store future imported evidence, provenanc
 fork boundaries, memory, and settings there when implemented.
 Workspace files and provider-managed credentials remain separate. Runtime logs, locks,
 and caches must not become the only copy of product data.
+
+Database upgrades must be atomic. A failed migration must leave the prior schema and
+records intact. Preserve original bytes and stable references. Refuse unsupported or
+newer formats clearly; never guess a conversion or reset a user's database.
 
 Keep production data under `~/.bonbon` and local development data under
 `~/.bonbon-dev` by default. Select the whole instance through one directory option,

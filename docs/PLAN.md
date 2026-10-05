@@ -4,8 +4,9 @@ This file tracks planned work that remains to be done. In the same commit as an
 implementation, remove completed items or revise partially completed items to describe
 only the remaining work. Document implemented behavior in [SPEC.md](SPEC.md).
 
-BonBon is in early development; no backward compatibility or migration support is
-required.
+BonBon is in daily use. Future storage changes must include embedded migrations and
+tests that preserve existing databases. Keep the full supported upgrade chain so users
+can skip releases. See [SPEC.md](SPEC.md#database-upgrades) for current support.
 
 ## Richer web workspace
 
@@ -173,7 +174,8 @@ BonBon sessions or turn disaster recovery into multi-machine database synchroniz
    Validate database integrity, references, and format before opening it. Preserve IDs,
    timestamps, original bytes, and history boundaries. Mark previously active runs as
    interrupted and report missing workspace paths. Do not overwrite active data, launch
-   agents, or replay recorded input. Reject incompatible development formats clearly.
+   agents, or replay recorded input. Apply supported embedded migrations to the recovered
+   database. Reject unknown or newer formats without changing their contents.
 5. **Document and expose the verified workflow.** Choose BonBon commands only after the
    lifecycle and recovery checks work. Update the command reference and current spec
    with actual behavior, recovery limits, and operational requirements.
