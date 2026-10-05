@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import './style.css';
 import { element } from './dom.js';
 import { Composer } from './composer.js';
+import { SessionSplit } from './session-split.js';
 import { sessionGroups } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -16,8 +17,7 @@ const elements = {
   'settings-open': element('settings-open', HTMLButtonElement),
   'settings-close': element('settings-close', HTMLButtonElement),
   'remove-worktree': element('remove-worktree', HTMLButtonElement),
-  'terminal-heading': element('terminal-heading', HTMLElement),
-  'terminal-footer': element('terminal-footer', HTMLElement),
+  'terminal-pane': element('terminal-pane', HTMLElement),
   'add-project': element('add-project', HTMLButtonElement),
   'project-dialog': element('project-dialog', HTMLDialogElement),
   'project-form': element('project-form', HTMLFormElement),
@@ -87,6 +87,7 @@ const composer = new Composer({
   bracketed: () => !!terminal?.modes.bracketedPasteMode,
   action,
 });
+const sessionSplit = new SessionSplit();
 
 let showingSettings = false;
 const settingsView = new SettingsView(() => server);
@@ -379,14 +380,16 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
   history.replaceState(null, '', preparing && session.projectId ? `#project/${encodeURIComponent(session.projectId)}` : session.id ? `#${encodeURIComponent(session.id)}` : '');
-  $('terminal').hidden = $('terminal-heading').hidden = $('terminal-footer').hidden = preparing;
+  $('terminal-pane').hidden = preparing;
+  sessionSplit.setEnabled(false);
   if (preparing && session.id) {
     $('status').textContent = 'Draft';
     await preparation.open({ ...session, id: session.id, projectId: session.projectId ?? '' });
     await composer.select(session.id);
-    composer.show(); renderSessions(); return;
+    renderSessions(); return;
   }
   await preparation.close();
+  sessionSplit.setEnabled(true);
   const view = makeTerminal();
   let request: StreamRequest;
   if (start && session.id && session.preparation) {
@@ -448,7 +451,7 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   catch (error) {
     if (start && session.id) { await openSession(session); notice(errorMessage(error)); return; }
     throw error;
-  } finally { if (selected?.id) { await composer.select(selected.id); composer.show(); } }
+  } finally { if (selected?.id) await composer.select(selected.id); }
 }
 
 async function showLaunch(projectId: string): Promise<void> {

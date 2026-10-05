@@ -219,8 +219,10 @@ graphics, hyperlinks and extended keyboard protocols are not forwarded to the vi
 Use `bonbon query` to inspect the recording beyond the restored terminal view.
 There is no separate history panel, file browser, or diff view.
 
-Click **Message editor** below the terminal to open the optional multiline composer.
-Edit text normally; Enter adds a line. **Submit** pastes the message into the current
+The message editor stays below the terminal. Drag the small divider between them to
+adjust their heights. You can also focus the divider and use Up/Down arrows or Home/End.
+The chosen editor size stays while switching sessions in this tab and resets on reload.
+Edit text normally; Enter adds a line. **Send** pastes the message into the current
 terminal prompt and presses Enter. Direct terminal input still works. Check the current
 prompt first: BonBon cannot tell whether an arbitrary CLI is ready for a message, and
 existing text at its prompt is not cleared. Multiline text and tabs require the CLI to

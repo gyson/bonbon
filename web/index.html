@@ -48,9 +48,12 @@
           <div class="launch-actions"><p class="form-help">Your draft stays with this project until you start. Shell starts without a preset command.</p><button id="launch-submit" class="primary" type="submit">Start session ↗</button></div>
         </form>
       </section>
-      <div id="terminal-heading" class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
-      <div id="terminal" aria-label="Session terminal"></div>
-      <div id="terminal-footer" class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span><button id="composer-toggle" aria-expanded="true" aria-controls="composer" disabled>Hide editor</button></div>
+      <div id="terminal-pane">
+        <div class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
+        <div id="terminal" aria-label="Session terminal"></div>
+        <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span></div>
+      </div>
+      <div id="session-divider" role="separator" tabindex="0" aria-label="Terminal size" aria-orientation="horizontal" aria-controls="terminal-pane" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65" title="Drag to resize. Use Up and Down arrow keys when focused." hidden><span aria-hidden="true"></span></div>
       <section id="composer" aria-label="Message editor">
         <label for="composer-text">Compose a message</label>
         <textarea id="composer-text" rows="4" placeholder="Write your request. Start the session when you’re ready…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>

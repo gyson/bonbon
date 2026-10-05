@@ -30,7 +30,6 @@ interface Host {
 
 export class Composer {
   private readonly panel = element('composer', HTMLElement);
-  private readonly toggle = element('composer-toggle', HTMLButtonElement);
   private readonly text = element('composer-text', HTMLTextAreaElement);
   private readonly status = element('composer-status', HTMLElement);
   private readonly files = element('composer-files', HTMLElement);
@@ -49,12 +48,6 @@ export class Composer {
   private loaded = false;
 
   constructor(private readonly host: Host) {
-    this.toggle.onclick = () => {
-      this.panel.hidden = !this.panel.hidden;
-      this.toggle.setAttribute('aria-expanded', String(!this.panel.hidden));
-      this.toggle.textContent = this.panel.hidden ? 'Message editor' : 'Hide editor';
-      if (!this.panel.hidden) this.text.focus();
-    };
     this.text.oninput = () => {
       this.state.draft.text = this.text.value;
       this.changed();
@@ -87,17 +80,10 @@ export class Composer {
     });
   }
 
-  show(): void {
-    this.panel.hidden = false;
-    this.toggle.setAttribute('aria-expanded', 'true');
-    this.toggle.textContent = 'Hide editor';
-  }
-
   controls(blocked = this.blocked, active = this.active): void {
     this.blocked = blocked;
     this.active = active;
     const unavailable = blocked || !this.loaded;
-    this.toggle.disabled = !this.session;
     this.text.disabled = this.attach.disabled = unavailable || this.state.draft.pending;
     this.submit.disabled = unavailable || !active || this.state.draft.pending || (!this.text.value.trim() && !this.state.attachments.length);
     this.review.hidden = !this.state.draft.pending;
