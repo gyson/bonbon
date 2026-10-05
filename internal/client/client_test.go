@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,22 +17,65 @@ import (
 )
 
 func TestMenuQuitIsBoundToItsServerInstance(t *testing.T) {
-	for _, expected := range []string{"current", "previous"} {
-		t.Run(expected, func(t *testing.T) {
+	for _, expectedID := range []string{"current", "previous"} {
+		t.Run(expectedID, func(t *testing.T) {
 			target, received := fixtureServer(t, "bonbon/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
-			err := target.StopInstance(expected)
+			expected, err := instance.Read(target.Dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected.Instance = expectedID
+			err = StopInstance(expected)
 			message := receiveRequest(t, received)
-			if expected == "previous" {
+			if expectedID == "previous" {
 				if !errors.Is(err, ErrServerVerification) || message.Type != "" {
 					t.Fatalf("stale menu sent shutdown: %v %+v", err, message)
 				}
-			} else if err != nil || message.Request == nil || message.Request.Instance != expected {
+			} else if err != nil || message.Request == nil || message.Request.Instance != expectedID {
 				t.Fatalf("menu quit: %v %+v", err, message)
 			}
 		})
 	}
-	if err := (Target{}).StopInstance(""); err == nil {
+	if err := StopInstance(protocol.ServerInfo{}); err == nil {
 		t.Fatal("accepted an unbound menu quit")
+	}
+}
+
+func TestMenuQuitDoesNotRereadConnectionFile(t *testing.T) {
+	for _, change := range []string{"missing", "malformed", "replacement", "removed-directory"} {
+		t.Run(change, func(t *testing.T) {
+			target, received := fixtureServer(t, "bonbon/other", nil, protocol.Message{Type: "result", Result: json.RawMessage(`{"stopping":true}`)})
+			expected, err := instance.Read(target.Dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "missing":
+				err = instance.Remove(target.Dir)
+			case "malformed":
+				err = os.WriteFile(filepath.Join(target.Dir, "server.json"), []byte("{"), 0600)
+			case "replacement":
+				other, _ := fixtureServer(t, "bonbon/other", nil, protocol.Message{})
+				var replacement protocol.ServerInfo
+				replacement, err = instance.Read(other.Dir)
+				if err == nil {
+					replacement.DataDir, replacement.Instance = target.Dir, "replacement"
+					err = instance.Publish(replacement)
+				}
+			case "removed-directory":
+				err = os.RemoveAll(target.Dir)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = StopInstance(expected); err != nil {
+				t.Fatal(err)
+			}
+			message := receiveRequest(t, received)
+			if message.Request == nil || message.Request.Operation != "stop" || message.Request.Instance != expected.Instance || message.Request.Protocol != expected.Protocol {
+				t.Fatalf("menu lost its original server: %+v", message)
+			}
+		})
 	}
 }
 
@@ -92,9 +136,16 @@ func TestClientsVerifyGreetingBeforeSendingOperation(t *testing.T) {
 			return err
 		},
 		"stop": Target.Stop,
+		"menu-quit": func(target Target) error {
+			info, err := instance.Read(target.Dir)
+			if err != nil {
+				return err
+			}
+			return StopInstance(info)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			for _, mismatch := range []string{"directory", "instance", "port", "protocol", "empty-protocol", "missing-server", "message-type"} {
+			for _, mismatch := range []string{"directory", "instance", "port", "pid", "protocol", "empty-protocol", "missing-server", "message-type"} {
 				t.Run(mismatch, func(t *testing.T) {
 					target, received := fixtureServer(t, protocol.Version, func(greeting *protocol.Message) {
 						switch mismatch {
@@ -104,6 +155,8 @@ func TestClientsVerifyGreetingBeforeSendingOperation(t *testing.T) {
 							greeting.Server.Instance = "replacement"
 						case "port":
 							greeting.Server.Port++
+						case "pid":
+							greeting.Server.PID++
 						case "protocol":
 							greeting.Server.Protocol = "unsupported"
 						case "empty-protocol":

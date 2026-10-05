@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"bonbon/internal/client"
+	"bonbon/internal/instance"
 )
 
 // Stand in for AppKit so lifecycle tests can run without a graphical login.
@@ -84,7 +85,11 @@ func TestMenuQuitFinalizesActiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = target.StopInstance(info.Instance); err != nil {
+	// Quit must still reach its parent after disposable connection data is lost.
+	if err = instance.Remove(directory); err != nil {
+		t.Fatal(err)
+	}
+	if err = client.StopInstance(info); err != nil {
 		t.Fatal(err)
 	}
 	c.wait(t, 137)
@@ -118,6 +123,36 @@ func TestMenuPipeClosesAfterServerCrash(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return strings.Count(menuEvents(t, path), "exit ") == 1 })
+}
+
+func TestMenuQuitLeavesReplacementConnectionFile(t *testing.T) {
+	directory := t.TempDir()
+	startTestServer(t, directory)
+	target := client.Target{Dir: directory}
+	original, err := target.Health()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ensure even a failing test stops only the fixture server we launched.
+	t.Cleanup(func() {
+		client.StopInstance(original)
+		waitServerRelease(target)
+	})
+	replacement := original
+	replacement.Instance = "replacement"
+	if err = instance.Publish(replacement); err != nil {
+		t.Fatal(err)
+	}
+	if err = client.StopInstance(original); err != nil {
+		t.Fatal(err)
+	}
+	if err = waitServerRelease(target); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := instance.Read(directory)
+	if err != nil || saved != replacement {
+		t.Fatalf("old server removed replacement connection information: %+v, %v", saved, err)
+	}
 }
 
 func TestServerCanStartWithoutMenu(t *testing.T) {

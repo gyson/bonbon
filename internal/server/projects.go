@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"bonbon/internal/history"
-	"bonbon/internal/protocol"
 	agent "bonbon/internal/runtime"
 )
 
@@ -60,22 +59,4 @@ func (s *Server) addProject(name, workspace string) (history.Project, error) {
 		}
 	}
 	return s.store.CreateProject(name, path)
-}
-
-func (s *Server) prepareProjectRun(request *protocol.Run) (*agent.Launch, error) {
-	if request == nil {
-		return prepareRun(nil)
-	}
-	run := *request
-	if run.ProjectID != "" {
-		if run.Workspace != "" {
-			return nil, errors.New("choose a project or a standalone workspace, not both")
-		}
-		p, err := s.store.Project(run.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		run.Workspace = p.Workspace
-	}
-	return prepareRun(&run)
 }

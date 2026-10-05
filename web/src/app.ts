@@ -1,5 +1,5 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
-import type { Project, Run, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Project, Preparation, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -8,8 +8,16 @@ import { element } from './dom.js';
 import { Composer } from './composer.js';
 import { sessionGroups } from './projects.js';
 import { SessionConnection } from './session-connection.js';
+import { PreparationEditor } from './preparation.js';
+import { SettingsView } from './settings.js';
 
 const elements = {
+  'launch-summary': element('launch-summary', HTMLElement),
+  'settings-open': element('settings-open', HTMLButtonElement),
+  'settings-close': element('settings-close', HTMLButtonElement),
+  'remove-worktree': element('remove-worktree', HTMLButtonElement),
+  'terminal-heading': element('terminal-heading', HTMLElement),
+  'terminal-footer': element('terminal-footer', HTMLElement),
   'add-project': element('add-project', HTMLButtonElement),
   'project-dialog': element('project-dialog', HTMLDialogElement),
   'project-form': element('project-form', HTMLFormElement),
@@ -23,8 +31,6 @@ const elements = {
   'project-remove': element('project-remove', HTMLButtonElement),
   'project-remove-help': element('project-remove-help', HTMLElement),
   'cancel-project': element('cancel-project', HTMLButtonElement),
-  'launch-project': element('launch-project', HTMLSelectElement),
-  'launch-folder': element('launch-folder', HTMLElement),
   'rename-session': element('rename-session', HTMLButtonElement),
   'rename-dialog': element('rename-dialog', HTMLDialogElement),
   'rename-form': element('rename-form', HTMLFormElement),
@@ -33,12 +39,9 @@ const elements = {
   'rename-submit': element('rename-submit', HTMLButtonElement),
   'cancel-rename': element('cancel-rename', HTMLButtonElement),
   'notice': element('notice', HTMLElement),
-  'new-session': element('new-session', HTMLButtonElement),
-  'welcome-new': element('welcome-new', HTMLButtonElement),
   'take-control': element('take-control', HTMLButtonElement),
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
-  'launch-submit': element('launch-submit', HTMLButtonElement),
   'sessions': element('sessions', HTMLElement),
   'filter': element('filter', HTMLInputElement),
   'refresh': element('refresh', HTMLButtonElement),
@@ -52,18 +55,14 @@ const elements = {
   'welcome': element('welcome', HTMLElement),
   'session-view': element('session-view', HTMLElement),
   'session-id': element('session-id', HTMLElement),
-  'launch-error': element('launch-error', HTMLElement),
-  'launch-workspace': element('launch-workspace', HTMLInputElement),
-  'launch-dialog': element('launch-dialog', HTMLDialogElement),
-  'cancel-launch': element('cancel-launch', HTMLButtonElement),
-  'launch-form': element('launch-form', HTMLFormElement),
-  'launch-name': element('launch-name', HTMLInputElement),
   'instance-dir': element('instance-dir', HTMLElement),
 };
 
 const $ = <K extends keyof typeof elements>(id: K): typeof elements[K] => elements[id];
 
 interface SessionView {
+  preparation?: Preparation;
+  worktree?: Worktree;
   projectId?: string;
   id?: string;
   title: string;
@@ -89,6 +88,24 @@ const composer = new Composer({
   action,
 });
 
+let showingSettings = false;
+const settingsView = new SettingsView(() => server);
+const preparation = new PreparationEditor({
+  server: () => server,
+  changed(session) {
+    if (selected?.id === session.id) {
+      selected = { ...selected, ...session };
+      $('session-title').textContent = projects.find(p => p.id === session.projectId)?.name ?? 'Project draft';
+      $('workspace').textContent = session.workspace;
+    }
+    void refreshSessions();
+  },
+  start: session => action(async () => {
+    await composer.flush();
+    await openSession({ ...session, status: 'draft' }, true);
+  }),
+});
+
 let noticeSource: 'action' | 'list' | 'stream' = 'action';
 function notice(text = '', source: typeof noticeSource = 'action') {
   noticeSource = source;
@@ -101,18 +118,26 @@ function clearNotice(source: typeof noticeSource) {
 }
 
 function controls() {
+  const launch = selected?.preparation;
+  $('launch-summary').hidden = showingSettings || !launch || selected?.status === 'draft';
+  $('launch-summary').textContent = launch ? `${launch.toolName} · ${launch.command || 'Interactive shell'}` : '';
+  $('launch-summary').title = $('launch-summary').textContent;
+  preparation.controls(busy);
+  $('settings-open').disabled = busy || !server;
+  $('settings-close').disabled = busy;
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active && connection.peer.controlling);
-  $('add-project').disabled = $('new-session').disabled = $('welcome-new').disabled = busy || !server;
+  $('add-project').disabled = busy || !server;
   $('take-control').hidden = !connection?.peer?.active || connection.peer.controlling;
   $('take-control').disabled = busy || !connection?.ready;
-  $('stop').disabled = busy || !selected || !['running', 'starting'].includes(selected.status);
-  $('reconnect').hidden = !selected || !!connection?.peer?.active;
+  $('stop').disabled = busy || showingSettings || !selected || !['running', 'starting'].includes(selected.status);
+  $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active;
   $('reconnect').textContent = ['running', 'starting'].includes(selected?.status ?? '') ? 'Reconnect' : 'Reload output';
   $('reconnect').disabled = busy;
-  $('launch-submit').disabled = $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
-  $('rename-session').hidden = !selected?.id;
+  $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
+  $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
+  $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed';
+  $('remove-worktree').disabled = busy || ['running','starting','creating'].includes(selected?.status ?? '');
   $('rename-session').disabled = busy;
-  $('launch-project').disabled = $('launch-workspace').disabled = $('launch-name').disabled = busy;
   $('project-name').disabled = $('project-workspace').disabled = $('rename-name').disabled = busy;
   for (const button of $('sessions').querySelectorAll('button')) button.disabled = busy;
 }
@@ -143,6 +168,11 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
     workspace.textContent = session.workspace;
     button.append(workspace);
   }
+  if (session.worktree) {
+    const label = document.createElement('small');
+    label.textContent = `⑂ ${session.worktree.branch}${session.worktree.state === 'removed' ? ' · removed' : ''}`;
+    button.append(label);
+  }
   button.append(status);
   button.onclick = () => action(() => openSession(session));
   return button;
@@ -150,7 +180,7 @@ function sessionButton(session: SessionInfo, showWorkspace: boolean): HTMLButton
 
 function renderSessions() {
   const query = $('filter').value.toLowerCase();
-  const fingerprint = JSON.stringify([projects, sessions, query, selected?.id]);
+  const fingerprint = JSON.stringify([projects, sessions, query, selected?.id, selected?.status, showingSettings, [...collapsedProjects]]);
   if (fingerprint === renderedSidebar) { controls(); return; }
   renderedSidebar = fingerprint;
   $('sessions').replaceChildren();
@@ -165,13 +195,17 @@ function renderSessions() {
     heading.className = 'project-heading';
     const toggle = document.createElement('button');
     toggle.className = 'project-toggle';
-    toggle.title = project?.workspace ?? 'Sessions without a saved project';
+    const label = document.createElement('span');
+    label.className = 'project-name';
+    label.textContent = name;
+    label.title = project?.workspace ?? 'Sessions without a saved project';
     const list = document.createElement('div');
     list.id = `project-sessions-${id || 'standalone'}`;
     list.className = 'project-sessions';
     const update = () => {
       list.hidden = !query && collapsedProjects.has(id);
-      toggle.textContent = `${list.hidden ? '▸' : '▾'} ${name}`;
+      toggle.textContent = list.hidden ? '▸' : '▾';
+      toggle.setAttribute('aria-label', `${list.hidden ? 'Expand' : 'Collapse'} ${name}`);
       toggle.setAttribute('aria-expanded', String(!list.hidden));
     };
     toggle.setAttribute('aria-controls', list.id);
@@ -180,14 +214,20 @@ function renderSessions() {
       update();
     };
     update();
-    heading.append(toggle);
+    heading.append(toggle, label);
     if (project) {
+      if (project.draftId) {
+        const draft = document.createElement('span');
+        draft.className = 'project-draft';
+        draft.textContent = 'Draft';
+        heading.append(draft);
+      }
       const add = document.createElement('button');
       add.className = 'project-action';
       add.textContent = '＋';
-      add.title = `New session in ${name}`;
+      add.title = `Open draft in ${name}`;
       add.setAttribute('aria-label', add.title);
-      add.onclick = () => action(() => startProject(project));
+      add.onclick = () => action(() => showLaunch(project.id));
       heading.append(add);
       if (id !== 'general') {
         const edit = document.createElement('button');
@@ -203,7 +243,7 @@ function renderSessions() {
     if (!group.sessions.length) {
       const empty = document.createElement('p');
       empty.className = 'project-empty';
-      empty.textContent = query ? 'No matching recent sessions.' : id === 'general' ? 'A place for work across projects.' : 'Start a session with ＋';
+      empty.textContent = query ? 'No matching recent sessions.' : 'Open a draft with ＋.';
       list.append(empty);
     }
     section.append(heading, list);
@@ -231,7 +271,7 @@ async function refreshSessions() {
     sessions = nextSessions;
     $('connection').textContent = '● Local server connected';
     clearNotice('list');
-    if (selected) {
+    if (selected && !showingSettings && !preparation.visible) {
       selected = sessions.find(s => s.id === selected?.id) || selected;
       $('session-title').textContent = selected.title || 'Untitled session';
       $('workspace').textContent = selected.workspace;
@@ -297,6 +337,7 @@ function makeTerminal(): Terminal {
 }
 
 async function leaveView() {
+  await preparation.flush();
   await composer.flush();
   connection?.close();
   connection = null;
@@ -313,28 +354,43 @@ function showRole() {
   controls();
 }
 
-async function openSession(session: SessionView, run?: Omit<Run, 'size'>): Promise<void> {
+async function openSession(session: SessionView, start = false): Promise<void> {
   if (!server) throw new Error('The server is unavailable. Reload this page.');
-  if (!run && selected?.id === session.id && connection?.peer?.active) {
+  if (!start && !showingSettings && selected?.id === session.id && connection?.peer?.active) {
     terminal?.focus();
     return;
   }
   await leaveView();
+  settingsView.close(); showingSettings = false;
+  if (!start && session.id) {
+    const detail = await call(server, { operation: 'session-config', session: session.id });
+    session = { ...session, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
+  }
   await composer.select('');
   notice();
   selected = session;
   $('welcome').hidden = true;
   $('session-view').hidden = false;
-  $('session-title').textContent = session.title || 'New session';
+  const preparing = session.status === 'draft' && !start;
+  $('session-title').textContent = preparing ? projects.find(p => p.id === session.projectId)?.name ?? 'Project draft' : session.title || 'Session';
   $('workspace').textContent = session.workspace;
   $('workspace').title = session.workspace;
   $('session-id').textContent = session.id || '';
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
+  history.replaceState(null, '', preparing && session.projectId ? `#project/${encodeURIComponent(session.projectId)}` : session.id ? `#${encodeURIComponent(session.id)}` : '');
+  $('terminal').hidden = $('terminal-heading').hidden = $('terminal-footer').hidden = preparing;
+  if (preparing && session.id) {
+    $('status').textContent = 'Draft';
+    await preparation.open({ ...session, id: session.id, projectId: session.projectId ?? '' });
+    await composer.select(session.id);
+    composer.show(); renderSessions(); return;
+  }
+  await preparation.close();
   const view = makeTerminal();
   let request: StreamRequest;
-  if (run) {
-    request = { operation: 'session-new', run: { ...run, size: size(view) } };
+  if (start && session.id && session.preparation) {
+    request = { operation: 'session-start', session: session.id, revision: session.preparation.revision, size: size(view) };
   } else if (session.id) {
     request = { operation: 'session-resume', session: session.id, size: size(view) };
   } else {
@@ -388,40 +444,20 @@ async function openSession(session: SessionView, run?: Omit<Run, 'size'>): Promi
       refreshSessions();
     },
   });
-  await connection.connect();
-  if (selected?.id) await composer.select(selected.id);
+  try { await connection.connect(); }
+  catch (error) {
+    if (start && session.id) { await openSession(session); notice(errorMessage(error)); return; }
+    throw error;
+  } finally { if (selected?.id) { await composer.select(selected.id); composer.show(); } }
 }
 
-async function startProject(project: Project, title = ''): Promise<void> {
-  collapsedProjects.delete(project.id);
-  await openSession({ projectId: project.id, title, workspace: project.workspace, status: 'starting' }, { projectId: project.id, title });
-  terminal?.focus();
-}
-
-function launchFolder() {
-  const standalone = !$('launch-project').value;
-  $('launch-folder').hidden = !standalone;
-  $('launch-workspace').required = standalone;
-}
-
-function showLaunch() {
-  $('launch-error').hidden = true;
-  $('launch-name').value = '';
-  $('launch-project').replaceChildren();
-  for (const project of projects) {
-    const option = document.createElement('option');
-    option.value = project.id;
-    option.textContent = project.name;
-    $('launch-project').append(option);
-  }
-  const standalone = document.createElement('option');
-  standalone.value = '';
-  standalone.textContent = 'Another folder (standalone)';
-  $('launch-project').append(standalone);
-  $('launch-project').value = selected ? selected.projectId ?? '' : 'general';
-  if (selected?.workspace) $('launch-workspace').value = selected.workspace;
-  launchFolder();
-  $('launch-dialog').showModal();
+async function showLaunch(projectId: string): Promise<void> {
+  if (!server) return;
+  await leaveView();
+  const session = await call(server, { operation: 'project-draft', project: projectId });
+  collapsedProjects.delete(projectId);
+  await openSession({ ...session, status: 'draft' });
+  await refreshSessions();
 }
 
 function showProject(project: Project | null = null) {
@@ -441,8 +477,26 @@ function showProject(project: Project | null = null) {
 
 async function initialize() {
   controls();
-  $('new-session').onclick = $('welcome-new').onclick = showLaunch;
-  $('launch-project').onchange = launchFolder;
+  $('settings-open').onclick = () => action(async () => {
+    await leaveView();
+    await settingsView.open();
+    showingSettings = true;
+    $('session-view').hidden = $('welcome').hidden = true;
+    $('session-title').textContent = 'Settings';
+    $('workspace').textContent = 'Defaults and tools for this instance';
+    $('status').hidden = true;
+  });
+  $('settings-close').onclick = () => action(async () => {
+    settingsView.close(); showingSettings = false;
+    if (selected) await openSession(selected);
+    else { $('welcome').hidden = false; $('session-title').textContent = 'Your workspace'; $('workspace').textContent = 'A home for your terminal sessions.'; }
+  });
+  $('remove-worktree').onclick = () => action(async () => {
+    if (!server || !selected?.id) return;
+    await call(server, { operation: 'worktree-remove', session: selected.id });
+    await refreshSessions();
+    notice('Worktree removed. Its branch and session history are preserved.');
+  });
   $('add-project').onclick = () => showProject();
   $('cancel-project').onclick = () => $('project-dialog').close();
   $('project-form').onsubmit = event => {
@@ -464,9 +518,12 @@ async function initialize() {
   $('project-remove').onclick = () => action(async () => {
     if (!server || !editingProject) return;
     try {
+      await preparation.flush();
+      await composer.flush();
       await call(server, { operation: 'project-remove', project: editingProject.id });
       $('project-dialog').close();
       await refreshSessions();
+      if (selected?.projectId === editingProject.id) await openSession(selected);
       notice('Project removed. Its sessions are now under Standalone. Files and running sessions are unchanged.');
     } catch (error) {
       $('project-error').textContent = errorMessage(error);
@@ -494,7 +551,6 @@ async function initialize() {
       }
     });
   };
-  $('cancel-launch').onclick = () => $('launch-dialog').close();
   $('refresh').onclick = refreshSessions;
   $('filter').oninput = renderSessions;
   $('take-control').onclick = () => {
@@ -510,33 +566,6 @@ async function initialize() {
     notice('Session stopped. Terminal output is saved.');
     await refreshSessions();
   });
-  $('launch-form').onsubmit = event => {
-    event.preventDefault();
-    action(async () => {
-      $('launch-error').hidden = true;
-      try {
-        const projectId = $('launch-project').value;
-        if (projectId) {
-          const project = projects.find(p => p.id === projectId);
-          if (!project) throw new Error('Project no longer exists. Refresh the list.');
-          await startProject(project, $('launch-name').value.trim());
-          $('launch-dialog').close();
-          return;
-        }
-        const workspace = $('launch-workspace').value.trim();
-        if (!workspace.startsWith('/') && workspace !== '~' && !workspace.startsWith('~/')) {
-          throw new Error('Enter an absolute workspace path or ~/path.');
-        }
-        const run = { workspace, title: $('launch-name').value.trim() };
-        await openSession({ title: run.title, workspace, status: 'starting' }, run);
-        $('launch-dialog').close();
-        terminal?.focus();
-      } catch (error) {
-        $('launch-error').textContent = errorMessage(error);
-        $('launch-error').hidden = false;
-      }
-    });
-  };
   new ResizeObserver(requestFit).observe($('terminal'));
   window.addEventListener('pagehide', () => connection?.close());
   try {
@@ -549,7 +578,8 @@ async function initialize() {
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
     const id = decodeURIComponent(location.hash.slice(1));
-    if (id) await action(() => openSession(sessions.find(s => s.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' }));
+    if (id.startsWith('project/')) await action(() => showLaunch(id.slice('project/'.length)));
+    else if (id) await action(() => openSession(sessions.find(s => s.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' }));
     setInterval(() => { if (!document.hidden && !busy) refreshSessions(); }, 5000);
   } catch (error) {
     server = null;

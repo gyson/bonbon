@@ -77,7 +77,7 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		data, _ := json.Marshal(run)
 		return appendEvent("run", data, "")
 	}
-	metadata, _ := json.Marshal(map[string]any{"command": command, "workspace": session.Workspace, "cols": size.Cols, "rows": size.Rows})
+	metadata, _ := json.Marshal(map[string]any{"command": command, "startupCommand": request.Command, "workspace": session.Workspace, "cols": size.Cols, "rows": size.Rows})
 	if err = appendEvent("start", metadata, ""); err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())
@@ -146,6 +146,16 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 	}()
 	childDone := make(chan error, 1)
 	go func() { childDone <- cmd.Wait() }()
+	// This is the user's explicit first shell command, not the composer's draft.
+	// Record before delivery, once per launch. Never replay on reconnect/restart.
+	if request.Command != "" {
+		input := []byte(request.Command + "\r")
+		if err := appendEvent("input", input, ""); err != nil {
+			report(err)
+		} else {
+			report(write(input))
+		}
+	}
 	var waitErr, captureErr error
 	var deadline <-chan time.Time
 	var timer *time.Timer

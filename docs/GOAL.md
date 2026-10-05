@@ -48,8 +48,7 @@ Keep deployment self-contained; a desktop shell can come later.
 
 Keep the BonBon CLI small: `ui` opens the home page, `server start/stop/restart` manages
 the background server, `query` reads history, and `update` installs a new release.
-Session operations and terminal interaction belong in the UI. The UI selects a saved project or a standalone
-workspace; `bonbon ui` needs no path
+Session operations and terminal interaction belong in the UI. New sessions start from a saved project, which keeps its unfinished draft; `bonbon ui` needs no path
 or session arguments. Shell launches use the server's environment.
 
 Closing a browser view leaves work and recording running. Reopening a live session
@@ -60,13 +59,13 @@ end all owned sessions and finalize their history. Ended sessions remain readabl
 Original terminal input and output are authoritative evidence. Readable text is derived;
 terminal redraws and escape sequences do not provide exact message boundaries. Allow
 multiple sessions in the same or overlapping workspace, with independent terminals and
-history. Provide optional managed worktrees later for independent filesystem changes.
+history. Provide optional managed worktrees for independent filesystem changes.
 
 Keep continuation semantics clear: live attachment, verified native CLI resume, and starting a fresh agent with retrieval access are different operations. Recorded output alone cannot restore hidden model context or process memory. Keep BonBon IDs independent of provider IDs, preserve native provenance when available, and never replay recorded keystrokes as a resume strategy.
 
 Provide a general-purpose read-only `bonbon query SQL` command for listing, searching,
 and reading recorded data. SQL chooses the scope, with no automatic session filter.
-Use the UI to browse sessions. Keep durable BonBon data in SQLite. Defer backup and recovery features to the cloud backup plan. Compatibility with earlier development formats is not required. History imports, native agent attachments, worktrees, and a richer chat interface remain goals after the shared terminal workflow is useful.
+Use the UI to browse sessions. Keep durable BonBon data in SQLite. Defer backup and recovery features to the cloud backup plan. Compatibility with earlier development formats is not required. History imports, native agent attachments, and a richer chat interface remain goals after the shared terminal workflow is useful.
 
 ## Future workspace interface
 

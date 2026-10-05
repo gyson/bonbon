@@ -42,12 +42,9 @@ func TestBrowserLaunchAndReconnect(t *testing.T) {
 	defer conn.Close()
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	readGreeting(t, conn)
-	if err = conn.WriteJSON(map[string]any{"type": "request", "request": map[string]any{
-		"protocol": protocol.Version, "operation": "session-new", "run": map[string]any{
-			"workspace": "~/project with spaces", "title": "Browser fixture",
-			"size": map[string]int{"rows": 25, "cols": 90},
-		},
-	}}); err != nil {
+	request := shellStartRequest(t, "~/project with spaces", "Browser fixture", protocol.Size{Rows: 25, Cols: 90})
+	request.Protocol = protocol.Version
+	if err = conn.WriteJSON(protocol.Message{Type: "request", Request: &request}); err != nil {
 		t.Fatal(err)
 	}
 	var session protocol.Message
@@ -310,7 +307,9 @@ func TestServerStopClosesIdleAndStalledClients(t *testing.T) {
 	defer stalled.Close()
 	stalled.SetReadDeadline(time.Now().Add(5 * time.Second))
 	readGreeting(t, stalled)
-	if err := stalled.WriteJSON(protocol.Message{Type: "request", Request: &protocol.Request{Protocol: protocol.Version, Operation: "session-new", Run: &protocol.Run{Workspace: t.TempDir(), Size: protocol.Size{Rows: 24, Cols: 80}}}}); err != nil {
+	request := shellStartRequest(t, t.TempDir(), "", protocol.Size{Rows: 24, Cols: 80})
+	request.Protocol = protocol.Version
+	if err := stalled.WriteJSON(protocol.Message{Type: "request", Request: &request}); err != nil {
 		t.Fatal(err)
 	}
 	var session, role, frame protocol.Message

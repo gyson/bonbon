@@ -11,12 +11,12 @@ prefix or binary envelope. The limit is 16 MiB per message, including all fragme
 Binary messages, malformed JSON, and multiple JSON values in one message are rejected.
 Terminal bytes use base64 in `data`; this preserves arbitrary bytes and control codes.
 
-This is an early development protocol. The version is `bonbon/12`, checked in the
+This is an early development protocol. The version is `bonbon/14`, checked in the
 server greeting and first request. No WebSocket subprotocol header is required.
 Session operations and health checks reject unsupported versions. Shutdown uses the
 verified server's advertised version, so `server restart` can replace a server after a
 session protocol change. This requires the same greeting and shutdown envelope; there
-is no fallback for previous transports. SQLite format 4 is required; older archives are rejected without migration.
+is no fallback for previous transports. SQLite format 5 is required; older archives are rejected without migration.
 
 ## Connections and requests
 
@@ -26,7 +26,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/12",
+    "protocol": "bonbon/14",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -37,12 +37,16 @@ Open one connection per operation. The server immediately sends a greeting:
 ```
 
 CLI clients verify the actual greeting before sending an operation: its directory must
-equal the canonical selected directory, and its protocol, instance ID, and port must
+equal the canonical selected directory, and its protocol, instance ID, PID, and port must
 match `server.json`. Queries and health checks also require the client's
 current protocol version. Check on the same connection that will carry the
 command; a separate health check alone cannot prevent a replacement race. An invalid
 or stale descriptor must never cause a command to be sent to a different server.
 To check health, read and verify the greeting, then close the connection.
+
+The menu companion retains its parent's verified connection information at startup.
+Quit reconnects to that endpoint and checks the greeting against the retained identity,
+so it does not depend on a later copy of `server.json` or stop a replacement instance.
 
 For shutdown, send `stop` with the protocol and instance ID from that verified greeting.
 Require a `result` with `{"stopping":true}`, then wait for the archive lock to be released
@@ -54,7 +58,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/12",
+    "protocol": "bonbon/14",
     "operation": "session-list",
     "limit": 10
   }
@@ -78,31 +82,40 @@ operations.
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata; omit `draft` to read |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`; server then shuts down |
-| `session-new` | `run` | `session`, then a terminal stream |
+| `settings-get` | none | `result`, saved settings and revision |
+| `settings-save` | `settings`, including current revision | `result`, updated settings and revision |
+| `workspace-inspect` | `workspace` | `result`, Git availability, root, HEAD, branch, or reason |
+| `project-draft` | `project` ID | `result`, the project’s existing unfinished preparation or a new one with snapshotted defaults; starts no process |
+| `session-config` | `session`, optional `preparation` plus `name` | `result`, session; supplying configuration saves against its revision |
+| `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream; claims launch once |
+| `worktree-remove` | `session` | `result`, containing `removed`; preserves branch and history |
 | `session-resume` | `session` ID and `size` | `session`, then a terminal stream or recorded history |
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`.
-RPC requests have no IDs, connection multiplexing, or automatic retries. Do not retry a session creation just
-because the connection closed before its reply; creation may already have succeeded.
+RPC requests have no IDs, connection multiplexing, or automatic retries. Reopening a
+project reuses its one unfinished draft, including after a lost reply. Never repeat a
+session-start after an uncertain result; inspect session-config and reattach instead.
 
-`run` contains either `projectId` or `workspace`, plus `title` and `size`.
-The server resolves a project ID to its saved workspace. Both fields together are
-rejected. An unknown project or missing folder fails the launch. The server resolves its `$SHELL`
+New sessions start with project-draft, session-config, then session-start. The project
+supplies a fixed workspace. An unknown project fails before draft creation. A missing
+folder fails creation or launch. The server resolves its `$SHELL`
 from PATH or an absolute path, falling back to `/bin/sh` when unset. Relative shell
 paths are rejected. It starts the shell with `-i`, using its startup environment and
-`TERM=xterm-256color`. Clients do not supply shell settings, environment, or commands.
-Users launch agents at the shell prompt.
+`TERM=xterm-256color`. Clients do not supply shell settings or environment. A startup command is a single
+shell line (up to 1,000 bytes, without control characters) submitted once after the PTY
+opens. It is recorded as input, independently of the composer draft.
 
 `workspace` accepts an absolute path, `~`, or `~/path`. The server expands `~` using
 its own `HOME`. Other relative paths, `~user`, and environment-variable expansion are
 unsupported. Workspaces must resolve to existing directories; history records their
 canonical paths. Multiple sessions may share the same or overlapping workspace.
-An empty title defaults to the shell and workspace names. Terminal size is
+An empty title defaults to the tool and workspace names. Terminal size is
 `{"rows":24,"cols":80}`, with 2–512 columns and 1–256 rows.
 
-Protocol 12 adds project operations, project launches, and session renaming.
-SQLite format 4 stores project metadata and session membership. Use a fresh
+Protocol 14 keeps one unfinished draft per project and removes direct session creation
+and per-session workspace or command overrides.
+SQLite format 5 stores these records alongside projects and session membership. Use a fresh
 instance directory for older archives; there is no migration. Rebuild, start the new
 server, and reload the browser.
 
@@ -111,7 +124,9 @@ must contain 1–200 characters without control characters. General has ID `gene
 the server creates it at startup under `<instance>/workspaces/general`. Rename and
 remove requests for General fail. Removing a custom project preserves sessions and
 running processes, clearing only their project membership. Session summaries include
-`projectId`, an empty string for standalone sessions. Their `workspace` remains the
+`projectId`, an empty string after their project is removed. Project-list includes
+`draftId` when a project has an unfinished draft. Session-list excludes those project
+drafts; drafts detached by project removal remain visible under Standalone. Their `workspace` remains the
 canonical path recorded at launch.
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
@@ -119,6 +134,36 @@ canonical path recorded at launch.
 that timestamp; event sequence breaks timestamp ties. View changes, drafts, attachments,
 terminal replies, and saved screens do not affect order. Reattaching at the same
 dimensions does not resize the PTY or request an application redraw.
+
+## Settings and prepared launches
+
+Settings contain revision, defaultTool (empty means Shell), worktree, base (default
+HEAD), and an ordered tools array. Each tool has a stable client-generated id, name,
+and command. Saving requires the current revision. Removing a default tool requires
+selecting another default in the same save. No tool is installed or authenticated by
+these operations.
+
+A prepared session includes preparation with revision, state, toolId, toolName, command,
+worktree, base, and branch. Configuration saves send the current preparation revision
+with toolId, worktree, base, and branch, plus name for the session title. Project,
+workspace, toolName, command, and state are not writable configuration fields. Changing
+toolId snapshots the selected command from Settings; an empty ID selects Shell and
+clears the command. Keeping the same tool preserves the existing snapshot, including
+a removed preset. Start uses that snapshot without resolving the preset again.
+Message drafts and attachments use the same session ID before and after launch.
+
+Preparation states are draft, creating, launched, and interrupted. Only draft accepts
+configuration changes or Start. Stale starts fail before effects. A failed preflight
+returns to draft only when no checkout could have been created. An uncertain launch
+remains interrupted after restart and must not be automatically retried. Query
+session-config or session-list to inspect a lost start response; use session-resume to
+join its process or read history. Never repeat startup input.
+
+Managed worktree metadata includes path, repository, requested base, resolved commit,
+creation branch, and state (creating, ready, failed, or removed). Creation uses the
+server's Git and never fetches or copies uncommitted files. Removal refuses active
+BonBon workspaces and modified, untracked, or ignored files; it keeps the branch.
+See [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees) for supported repositories.
 
 ## Terminal streams
 
@@ -198,7 +243,7 @@ An input `id` is an opaque correlation value up to 80 bytes. A receipt without a
 means the input was recorded and written to the PTY. It does not mean the application
 accepted or completed a message. A failure, missing receipt, or closed connection leaves
 delivery uncertain. IDs do not deduplicate input; never resend automatically. Reconnect
-uses `session-resume` for a known ID and never repeats `session-new`.
+uses `session-resume` for a known ID and never repeats `session-start`.
 
 ## Drafts and file references
 
@@ -240,13 +285,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/12") {
+    if (message.server.protocol !== "bonbon/14") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/12", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/14", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

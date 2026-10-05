@@ -32,10 +32,10 @@ The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; G
 - Keep the main logo and menu bar icon in sync through `web/src/bonbon.svg`. The
   frontend build uses `@resvg/resvg-js` to render the embedded template PNG. Commit
   the SVG source, not the generated image.
-- New sessions always use the server environment and launch an interactive shell (`$SHELL -i`, falling back to `/bin/sh -i`). Users run agents inside it. Resolve the shell from PATH or its configured absolute path; do not discover application bundles or add command selectors.
+- New sessions always use the server environment and launch an interactive shell (`$SHELL -i`, falling back to `/bin/sh -i`). Tools are user-defined names and single-line startup commands. Submit the selected command once through the shell; keep message drafts separate. Resolve the shell from PATH or its configured absolute path; do not discover application bundles.
 - Preserve normal CLI arguments, terminal interaction, authentication, and permissions. Do not inject prompts into a new wrapped run.
 - Keep General and custom project metadata in SQLite. Projects supply launch defaults; sessions retain their actual workspace path. Removing a project must preserve session history, files, and processes.
-- Build with `make build`. Start the server with `./bin/bonbon server start`, then open `./bin/bonbon ui`. Create a session in the UI and launch agents from its shell. Closing a tab leaves its view; the session and history capture continue. Use the UI's Stop session action to stop work.
+- Build with `make build`. Start the server with `./bin/bonbon server start`, then open `./bin/bonbon ui`. Click ＋ beside a project in the UI to reopen its draft, choose a tool or Shell and an optional worktree, then click Start session. Edit startup commands only in Settings. Closing a tab leaves its view; the session and history capture continue. Use the UI's Stop session action to stop work.
 - Use `./bin/bonbon ui` to open the running instance's home page in the default browser. It uses the same instance selection and server verification as other clients.
 - On macOS, server start also launches a menu companion from the same executable.
   Keep only Open UI and Quit BonBon in its menu. Quit stops the server and its sessions.
@@ -110,7 +110,7 @@ These describe current correctness and the behavior required when future feature
 - Closing or detaching a session client must leave its process and capture running in the server. Resume attaches to that process; explicit session stop ends it. Server stop/restart stops all of that server's sessions before closing its archive. Ended-session history replay and native agent resume are separate capabilities. Never claim terminal recordings restore a live process or native model state.
 - Conversation forks and filesystem checkpoints are separate operations. Never claim an old transcript restores historical files.
 - Identify the commit or working state used for a worktree. Preserve selected local changes and report snapshot exclusions.
-- Allow multiple sessions in the same or overlapping workspaces. Keep their PTYs, history, and lifecycle independent. Do not add workspace locks or confirmation gates. Files are shared; managed worktree isolation is future work in PLAN.md.
+- Allow multiple sessions in the same or overlapping workspaces. Keep their PTYs, history, and lifecycle independent. Do not add workspace locks or confirmation gates. Files are shared unless the user selects a managed worktree. Never remove an active session’s workspace or discard local files during cleanup.
 - Preserve partial output and uncertain delivery/completion states. Do not automatically replay potentially completed actions after a crash.
 - Forward supported permission requests and preserve CLI authentication and permission behavior.
 

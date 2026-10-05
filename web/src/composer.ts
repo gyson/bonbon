@@ -87,6 +87,12 @@ export class Composer {
     });
   }
 
+  show(): void {
+    this.panel.hidden = false;
+    this.toggle.setAttribute('aria-expanded', 'true');
+    this.toggle.textContent = 'Hide editor';
+  }
+
   controls(blocked = this.blocked, active = this.active): void {
     this.blocked = blocked;
     this.active = active;
@@ -156,7 +162,7 @@ export class Composer {
       this.loaded = true;
       this.text.value = this.state.draft.text;
       this.renderFiles();
-      this.message(this.state.draft.pending ? 'Submission may have reached the terminal. Check it before editing and submitting again.' : 'Draft saved per session');
+      this.message(this.state.draft.pending ? 'Submission may have reached the terminal. Check it before editing and submitting again.' : 'Draft saved');
     } catch (error) { this.message(`Cannot load draft: ${errorMessage(error)}`, true); }
     this.controls();
   }

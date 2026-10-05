@@ -48,8 +48,8 @@ The SQLite driver exposes query authorization and cancellation through supported
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
 The project is in early development. Commands, APIs, configuration, and on-disk formats
-are unstable; backward compatibility is not supported. Storage uses format version 4
-with projects, sessions, runs, and events. Other formats are rejected with a clear error.
+are unstable; backward compatibility is not supported. Storage uses format version 5
+with projects, sessions, runs, events, settings, preparations, and worktree metadata. Other formats are rejected with a clear error.
 There are no migrations or legacy schema paths.
 
 The history package separates schema and models, session/run operations, event capture, replay,
@@ -151,11 +151,12 @@ commands select the instance with global `--dir`, then `BONBON_DIR`, then the bu
 default. The server binds `127.0.0.1:0` and atomically publishes its assigned port and
 random instance ID in `server.json`, with private permissions. The file also includes
 protocol version, PID, canonical directory, and executable path. It is disposable and
-removed after handlers and agents stop, before releasing the archive lock.
+removed after handlers and agents stop, before releasing the archive lock. Shutdown
+leaves the descriptor intact if it belongs to another server instance.
 
 CLI clients read the connection file and open a WebSocket to its loopback port. The server
 sends a `server` greeting first. Before sending any operation, the client verifies the
-greeting's protocol, canonical directory, instance ID, and port against `server.json`
+greeting's protocol, canonical directory, instance ID, PID, and port against `server.json`
 on that same connection.
 This prevents stale metadata from directing a command to another instance. A stop request
 also carries the instance ID from that connection's greeting.
@@ -163,10 +164,10 @@ Health checks read the greeting and close without sending an operation.
 
 Session operations and health checks require the current protocol, with no version
 fallback. Shutdown uses the version verified above. The current version is
-`bonbon/12`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
+`bonbon/14`; each WebSocket message is limited to 16 MiB, including all fragments. Each carries exactly one JSON object.
 Binary messages and invalid JSON are rejected. There is no extra length prefix.
-Protocol 12 adds saved project operations, project session launches, and session renaming.
-SQLite format 4 adds projects and session membership.
+Protocol 14 uses project-owned drafts and tool selection from Settings. It removes
+direct session creation and per-session project, folder, and command overrides. SQLite format 5 adds settings, preparations, and worktree metadata.
 Older database formats are rejected; use a fresh instance directory. Reload the UI
 after starting the new server.
 
@@ -193,9 +194,12 @@ The menu contains **Open UI**, a separator, and **Quit BonBon** under the BonBon
 a soft candy wrapper with a terminal prompt inside. There are no settings, logs,
 separate stop action, or persistent status text. The icon is rendered from
 `web/src/bonbon.svg` at build time, embedded, and uses macOS template coloring. Open UI calls the
-same verified home-page opener as the CLI. Quit verifies the original server instance
-on the shutdown connection, requests graceful shutdown, and waits for the server's
-lifetime pipe to close. A replacement instance cannot be stopped by an old menu.
+same verified home-page opener as the CLI. Quit retains the connection information
+verified when the companion starts. It reconnects to that endpoint and verifies the
+original server identity on the shutdown connection, without rereading `server.json`.
+It requests graceful shutdown and waits for the server's lifetime pipe to close.
+Missing or replaced connection files do not prevent Quit. A replacement instance,
+including one reusing the original port, cannot be stopped by an old menu.
 The action stays disabled while quitting; failures retain the menu with a retry label
 and write diagnostic details to the server log. Actions run outside the native UI thread.
 
@@ -233,10 +237,66 @@ The sidebar lists saved projects and groups the 100 most recently active session
 under them through `project-list` and `session-list`. General appears first; custom
 projects are sorted by name. Groups can be collapsed in each view. A text filter matches
 project names and paths, or session titles, workspaces, and IDs. The list refreshes every
-five seconds while visible. This is a recent-session view, not full-history pagination.
+five seconds while visible. Unstarted drafts stay on their projects and do not consume
+the recent-session limit. Project names are plain text. The small arrow beside each
+name expands or collapses its group. Each project’s **＋** opens its draft.
+This is a recent-session view, not full-history pagination.
 Titles, errors, and recorded text are rendered as text, never HTML. Each tab has its own
 selected session. Tabs can share a session, with one controller for input and PTY size.
 Other tabs watch and can explicitly take control.
+
+### Session preparation, settings, and worktrees
+
+Settings is an instance-wide page with a default tool, default worktree choice, default
+Git base, and an ordered list of named commands. Shell is built in and sends no startup
+command. Users can add, edit, reorder, and remove other presets. A command is one line
+of shell syntax, at most 1,000 UTF-8 bytes, without control characters. BonBon does not
+install tools, choose models, or check provider-specific arguments. Commands may contain
+secrets and are stored locally in the same unencrypted archive as terminal input.
+
+Defaults are copied when preparation is created. Non-Git folders do not enable the
+worktree default. A preparation stores its chosen tool name and command independently
+of later preset changes, including deletion. Startup commands are edited only in
+Settings. Selecting a different tool snapshots its current command on the server; Shell
+clears it. The preparation keeps its project and workspace. Message drafts and attachments
+work before a run exists. Each project has one unfinished draft, reused across views
+and server restarts. Reopening a draft with **＋** does not reset its choices or message.
+Launch settings use optimistic revisions, separately from message revisions. Conflicts
+preserve the editor's local edits and report an error. Unsent edits warn before unload.
+
+Start claims the saved revision before creating files or a process. Duplicate starts
+and edits to an already claimed preparation fail. Reopening or reconnecting never
+resubmits the startup command. Failed preflight checks keep the preparation editable.
+An uncertain checkout or launch is preserved and marked interrupted; it is not retried
+automatically, including after server restart. Start creates an interactive shell and
+records the configured command as input before writing it once to the PTY. The shell
+remains after an ordinary command exits. Shell startup files that read or discard stdin
+can interfere with queued input; BonBon does not detect prompt readiness or retry it.
+
+The server uses the installed Git executable to detect repositories, including linked
+worktrees and repository subfolders. Creating a worktree requires an existing commit.
+Repositories and bases containing submodules are rejected. The chosen base
+(default HEAD) resolves to a commit at Start, without fetching. BonBon creates a fresh
+branch (user-named or generated as bonbon/TIMESTAMP-SUFFIX) and checkout under
+`<instance>/worktrees/YYYYMMDD-HHMMSS-XXXXXXXX`, using UTC and a random suffix. Repository
+subfolder projects launch in the corresponding subfolder. Missing or escaping subfolders
+fail the launch and preserve the checkout for inspection and explicit cleanup.
+
+SQLite records the checkout path, repository, requested base, resolved commit, creation
+branch, and lifecycle state. Sessions retain their actual launch paths. The sidebar
+shows the creation branch; it does not track later branch switches in the shell.
+Only committed files are checked out. Uncommitted changes, untracked/ignored files,
+dependencies, and local environment files are not copied. Worktree files remain outside
+SQLite and outside the planned database backup. Git worktrees share repository metadata;
+they provide independent working files, not a security sandbox.
+
+Closing views, stopping sessions, and removing projects preserve worktrees. **Remove
+worktree** checks all live BonBon session paths and refuses active or overlapping
+workspaces. It also refuses detached HEADs, replaced repositories, and modified, untracked, or
+ignored files, and uses Git removal
+without force. It preserves the branch and all session history. External processes and
+concurrent edits outside BonBon are not coordinated. Git remains responsible for its
+locks and linked-worktree metadata; missing/moved repositories cause explicit errors.
 
 ### Projects and launches
 
@@ -255,35 +315,36 @@ instance location on startup; old sessions retain their original workspace paths
 Project metadata is authoritative in SQLite. Files created in General are ordinary
 workspace files outside the database, like files in custom projects.
 
-Each project's **＋** starts a session directly. The global **New session** dialog
-selects a project or a standalone workspace and an optional title. New sessions send
-either `run.projectId` or `run.workspace`; supplying both is rejected. The server looks
-up a project's folder and validates it for each launch. A missing project or folder
-fails instead of falling back to General. General is the initial dialog selection;
-when a session is selected, its project or standalone choice is preselected.
+Clicking **＋** beside a project opens its saved preparation without launching a process. There is
+no global New session button. The main area has the session name, tool, and worktree
+choices above a persistent message editor. **Start session** replaces the upper form
+with its terminal and adds the session to the project's list. The message and attachments
+remain in that session. Clicking **＋** again creates its next draft. Launch settings
+and message drafts save separately. Removing a project preserves its unfinished draft
+under Standalone along with its sessions; it does not create a new project association.
 
 The server resolves its `$SHELL` and starts it with `-i`, using `/bin/sh` when unset.
 A nonempty relative shell path is rejected; names on PATH and absolute paths are
-accepted. Requests cannot override the shell or environment or supply a command. The
+accepted. Requests cannot override the shell or environment. A selected tool supplies an optional
+startup command to submit through that shell. The
 server inherits its startup environment and sets `TERM=xterm-256color`. An empty title
-defaults to the shell name and workspace basename.
+defaults to the selected tool name and workspace basename.
 
 Workspaces accept absolute paths, `~`, and `~/path`. Home expansion uses the server's
 `HOME` from startup, before canonicalization. Other relative paths, `~user`, and
 environment-variable expansion are unsupported. The directory must exist; its canonical
 absolute path is stored in history. Multiple sessions may share it. The shell reads its
 normal startup files. Agents retain their arguments, authentication, and permissions;
-BonBon injects no prompts. Exiting an agent returns to the shell; exiting the shell ends
+BonBon submits only the configured startup command; it does not submit the message draft automatically. Exiting an agent returns to the shell; exiting the shell ends
 the session.
 
 xterm.js displays server-rendered frames and forwards keyboard input, paste and resize
-requests through the shared stream. The UI sends no provider flags or prompts. Source
+requests through the shared stream. The server uses the saved tool command without adding provider flags or prompts. Source
 terminal queries are answered by the server, including while detached. Generated frames
 exclude hyperlinks, clipboard requests and other non-display source escape sequences.
 
 Selecting another session closes the old view before opening the selected one.
-Closing or refreshing the tab leaves work and recording running. Refresh resumes the ID
-in the URL fragment. Transport failures trigger automatic reconnect with increasing delays
+Closing or refreshing the tab leaves work and recording running. Refresh reopens the project draft or session identified in the URL fragment. Transport failures trigger automatic reconnect with increasing delays
 from 0.5 to 30 seconds. The last screen stays visible and input is disabled until a fresh
 frame is rendered. A session connection owns its peer, rendered-frame state, and retry
 timer. Closing that view cancels retries and ignores late callbacks from the old connection.
@@ -317,10 +378,11 @@ A browser check with a synthetic terminal confirmed live reattachment, switching
 sessions, stop followed by history reload, and page reload at a different window width.
 The final display kept its recorded layout. This check did not run a real agent CLI.
 
-### Optional message editor
+### Message editor
 
-The Message editor button opens a multiline composer below the terminal. Direct
-terminal interaction remains available. Enter inserts a newline; Submit sends one
+The multiline composer is visible below preparation and terminal views. Hide editor
+can collapse it after launch. Direct terminal interaction remains available. Enter
+inserts a newline; Send sends one
 `input` control to the attached PTY with the message followed by Enter. When the
 application enables bracketed paste, the message uses its paste delimiters. Newlines
 are normalized to carriage returns, matching terminal paste. Multiline text and tabs
@@ -339,7 +401,7 @@ Before submission the editor saves `pending: true`. An optional input ID request
 successful receipt. This does not confirm application acceptance. A lost receipt, failed
 write, or reload during submission retains the draft without retrying it. The user must
 check the terminal and explicitly unlock that draft before editing and submitting again.
-Drafts can still be edited while detached or after the process ends; Submit is disabled.
+Drafts can still be edited before launch, while detached, or after the process ends; Send is disabled.
 
 The editor accepts file selection, drag/drop, and clipboard files, including images
 when supplied by the browser. `composer-attach` copies original bytes into an `attachment`
@@ -352,7 +414,7 @@ The server materializes private, read-only copies in
 `<instance>/attachment-cache/<event-sequence>/<filename>` on upload, draft load, and
 submission preparation. Ordinary draft autosaves read metadata without rewriting files.
 Atomic replacement avoids partial file reads. The cache can be regenerated from SQLite;
-it is not authoritative and is not served over HTTP. Submit appends quoted local paths
+it is not authoritative and is not served over HTTP. Send appends quoted local paths
 to the user's text. This is not a native provider or multimodal upload. File access
 depends on the agent's capabilities and workspace permissions; no permissions are
 changed for it.
@@ -457,8 +519,8 @@ directory do not affect this choice. For all commands, directory selection is
 a directory across builds. Relative paths resolve from the caller's current directory;
 symlinks resolve to the same canonical instance. No data is moved from previous locations.
 SQLite (`history.sqlite`) lives under the selected directory and is created with
-private permissions. The archive stores projects, session membership, sessions, runs, and
-append-only events with stable global sequence numbers. New runs set `BONBON_SESSION`
+private permissions. The archive stores projects, sessions, runs, settings, preparation
+choices, worktree metadata, and append-only events with stable global sequence numbers. New runs set `BONBON_SESSION`
 and canonical `BONBON_DIR` for CLI retrieval, overriding inherited values.
 `BONBON_SESSION` is a value the caller can use in SQL, not an automatic filter. No retrieval
 prompt is automatically added to the agent's conversation.
@@ -504,6 +566,16 @@ integrations in this version.
 
 ## Validation
 
+New launch fixtures cover persistent defaults, stale setting/configuration saves,
+command snapshots after preset removal, interrupted launch claims, Git subfolder and
+linked-checkout detection, clean creation, and refusal to remove active or dirty worktrees.
+Synthetic sh, bash, and zsh runs verify one startup input, shell availability afterward,
+reconnect without replay, and an untouched composer draft. These are shell fixtures;
+they do not establish model availability or agent CLI compatibility.
+Browser checks with a temporary instance verified settings, opening project drafts, saved
+preparations after refresh, startup in a timestamped worktree, an untouched message
+draft, and stopping without deleting the worktree. No browser errors were reported.
+
 The UI-only workflow passes `CGO_ENABLED=0 go test ./...`, `go vet ./...`,
 `go test -race ./...`, `make build`, and `make web-check` on macOS. A compiled-binary browser smoke test
 created a shell, typed a command, opened a second view, transferred control, closed
@@ -529,8 +601,8 @@ viewer input, receipt routing, slow views, final-frame ordering, and ended-scree
 reconstruction. Cross-engine fixtures compare Go-generated frames with xterm.js for
 cells, styles, cursor, scrollback, resize, split escapes, Unicode, and alternate screens.
 
-TypeScript fixtures cover reconnect backoff, cancelled retries, unknown session
-creation outcomes, identity checks, binary input, viewer input guards, ended
+TypeScript fixtures cover reconnect backoff, cancelled retries, uncertain session
+start outcomes, identity checks, binary input, viewer input guards, ended
 views, slow sends, disconnects without input retry, frame parsing and acknowledgements,
 paste boundaries, and file references. Go tests check embedded assets and browser
 origin restrictions. CLI fixtures check the home-page opener, instance selection,
@@ -544,8 +616,13 @@ and dark previews. The updated native companion also launched and exited with it
 
 Project fixtures cover General and custom launches, canonical folder uniqueness,
 protected General identity, renaming, removal while a session runs, and restart
-persistence. Browser checks verified one-click project launches, standalone creation,
-and project/session renaming. No real agent CLI was used for these project checks.
+persistence. Draft fixtures cover concurrent project opens, preserved tool snapshots,
+Shell selection, attachment persistence, and starting a fresh draft after launch.
+Browser checks verified that project names are plain text without click actions,
+the separate arrows expand or collapse groups, **＋** opens or resumes drafts,
+and adding a project leaves the current view unchanged.
+They also verified draft restoration after switching, reload
+and server restart, Shell launch in a worktree, and separate drafts for subsequent sessions. No real agent CLI was used for these project checks.
 
 Storage and composer tests cover read-only queries, cancellation and limits, format
 rejection, persistence, original bytes, draft conflicts, pending submissions, attachment

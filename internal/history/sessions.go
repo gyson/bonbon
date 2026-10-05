@@ -19,6 +19,9 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
             SELECT seq FROM events WHERE session_id=sessions.id
             AND kind IN ('start','run','input','output','notice') ORDER BY seq DESC LIMIT 1
         )
+        WHERE project_id IS NULL OR NOT EXISTS (
+            SELECT 1 FROM preparations WHERE session_id=sessions.id AND state='draft'
+        )
         ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.id
         LIMIT ?`, limit)
 	if err != nil {
@@ -39,6 +42,9 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
 		return nil, err
 	}
 	for i := range result {
+		if err = s.launchMetadata(&result[i].Session); err != nil {
+			return nil, err
+		}
 		result[i].Run, err = s.LatestRun(result[i].ID)
 		if err != nil {
 			return nil, err
@@ -49,6 +55,9 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
 
 func (s *Store) Session(id string) (Session, error) {
 	session, err := scanSession(s.db.QueryRow("SELECT "+sessionColumns+" FROM sessions WHERE id=?", id))
+	if err == nil {
+		err = s.launchMetadata(&session)
+	}
 	if err == nil {
 		session.Run, err = s.LatestRun(id)
 	}
@@ -89,6 +98,9 @@ func (s *Store) MarkInterrupted() error {
 	}
 	defer tx.Rollback()
 	now := Now()
+	if _, err = tx.Exec("UPDATE preparations SET state='interrupted' WHERE state IN ('creating','launched') AND session_id NOT IN (SELECT session_id FROM runs)"); err != nil {
+		return err
+	}
 	detail := "Run has no recorded exit. Process state is unknown."
 	if _, err = tx.Exec(`INSERT INTO events(session_id,run_id,kind,data,text,created)
         SELECT session_id,id,'notice',?,'',? FROM runs WHERE status IN ('starting','running')`, []byte(detail), now); err != nil {

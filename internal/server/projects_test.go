@@ -1,13 +1,13 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"bonbon/internal/history"
-	"bonbon/internal/protocol"
 )
 
 func TestProjectWorkspaceResolution(t *testing.T) {
@@ -32,24 +32,18 @@ func TestProjectWorkspaceResolution(t *testing.T) {
 	if _, err = s.addProject("Alias", alias); err == nil {
 		t.Fatal("accepted duplicate canonical folder")
 	}
-	request := &protocol.Run{ProjectID: p.ID, Size: protocol.Size{Rows: 24, Cols: 80}}
-	run, err := s.prepareProjectRun(request)
-	if err != nil || run.Workspace != p.Workspace || request.Workspace != "" {
-		t.Fatalf("project launch: %+v %v", run, err)
+	draft, err := s.prepareProject(context.Background(), p.ID)
+	if err != nil || draft.Workspace != p.Workspace || draft.ProjectID != p.ID {
+		t.Fatalf("project preparation: %+v %v", draft, err)
 	}
-	request.Workspace = p.Workspace
-	if _, err = s.prepareProjectRun(request); err == nil {
-		t.Fatal("accepted project with workspace override")
+	for _, id := range []string{"", "missing"} {
+		if _, err = s.prepareProject(context.Background(), id); err == nil {
+			t.Fatal("accepted missing project")
+		}
 	}
-	request.Workspace = ""
-	request.ProjectID = "missing"
-	if _, err = s.prepareProjectRun(request); err == nil {
-		t.Fatal("accepted missing project")
-	}
-	request.ProjectID = history.GeneralProjectID
-	run, err = s.prepareProjectRun(request)
-	if err != nil || !strings.HasSuffix(run.Workspace, "/workspaces/general") {
-		t.Fatalf("general launch: %+v %v", run, err)
+	draft, err = s.prepareProject(context.Background(), history.GeneralProjectID)
+	if err != nil || !strings.HasSuffix(draft.Workspace, "/workspaces/general") {
+		t.Fatalf("general preparation: %+v %v", draft, err)
 	}
 	if err = s.ensureGeneral(); err != nil {
 		t.Fatal(err)

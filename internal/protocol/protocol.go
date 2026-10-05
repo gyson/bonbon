@@ -2,6 +2,7 @@
 package protocol
 
 import (
+	"bonbon/internal/history"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -10,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/12"
+const Version = "bonbon/14"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -20,26 +21,37 @@ type Size struct {
 }
 
 type Run struct {
-	ProjectID string `json:"projectId,omitempty"`
+	Command   string `json:"command,omitempty"`
 	Workspace string `json:"workspace"`
 	Title     string `json:"title"`
 	Size      Size   `json:"size"`
 }
 
+// Commands and workspace identity are server-owned snapshots, not form inputs.
+type PreparationConfig struct {
+	Revision int64  `json:"revision"`
+	ToolID   string `json:"toolId"`
+	Worktree bool   `json:"worktree"`
+	Base     string `json:"base"`
+	Branch   string `json:"branch"`
+}
+
 type Request struct {
-	Project   string  `json:"project,omitempty"`
-	Name      string  `json:"name,omitempty"`
-	Workspace string  `json:"workspace,omitempty"`
-	Protocol  string  `json:"protocol"`
-	Operation string  `json:"operation"`
-	Instance  string  `json:"instance,omitempty"`
-	Run       *Run    `json:"run,omitempty"`
-	SQL       string  `json:"sql,omitempty"`
-	Session   string  `json:"session,omitempty"`
-	Limit     int     `json:"limit,omitempty"`
-	Size      Size    `json:"size,omitempty"`
-	Draft     *Draft  `json:"draft,omitempty"`
-	Upload    *Upload `json:"upload,omitempty"`
+	Settings    *history.Settings  `json:"settings,omitempty"`
+	Preparation *PreparationConfig `json:"preparation,omitempty"`
+	Revision    int64              `json:"revision,omitempty"`
+	Project     string             `json:"project,omitempty"`
+	Name        string             `json:"name,omitempty"`
+	Workspace   string             `json:"workspace,omitempty"`
+	Protocol    string             `json:"protocol"`
+	Operation   string             `json:"operation"`
+	Instance    string             `json:"instance,omitempty"`
+	SQL         string             `json:"sql,omitempty"`
+	Session     string             `json:"session,omitempty"`
+	Limit       int                `json:"limit,omitempty"`
+	Size        Size               `json:"size,omitempty"`
+	Draft       *Draft             `json:"draft,omitempty"`
+	Upload      *Upload            `json:"upload,omitempty"`
 }
 
 // Drafts are editable composition state, not agent messages. Pending means that
@@ -71,13 +83,15 @@ type Composer struct {
 }
 
 type SessionInfo struct {
-	ProjectID string `json:"projectId"`
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Workspace string `json:"workspace"`
-	Updated   string `json:"updated"`
-	Status    string `json:"status"`
-	Viewers   int    `json:"viewers"`
+	Preparation *history.Preparation `json:"preparation,omitempty"`
+	Worktree    *history.Worktree    `json:"worktree,omitempty"`
+	ProjectID   string               `json:"projectId"`
+	ID          string               `json:"id"`
+	Title       string               `json:"title"`
+	Workspace   string               `json:"workspace"`
+	Updated     string               `json:"updated"`
+	Status      string               `json:"status"`
+	Viewers     int                  `json:"viewers"`
 }
 
 type ServerInfo struct {

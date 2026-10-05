@@ -107,7 +107,7 @@ func runMenuBarChild(target client.Target) error {
 				return ui(target, nil)
 			}, func() error {
 				// Receipt only: the lifetime pipe closes after server cleanup.
-				if err := target.StopInstance(info.Instance); err != nil {
+				if err := client.StopInstance(info); err != nil {
 					return fmt.Errorf("cannot quit BonBon: %w", err)
 				}
 				return nil

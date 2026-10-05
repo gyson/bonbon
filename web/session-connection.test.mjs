@@ -46,7 +46,7 @@ function fixture(t, request = resume) {
 
 test('reconnect joins the known session, waits for a fresh frame, and never repeats input', async t => {
   const { connection, sockets, frames, attach } = fixture(t, {
-    operation: 'session-new', run: { workspace: '/fixture', title: '', size },
+    operation: 'session-start', session: 'one', revision: 1, size,
   });
   const opened = connection.connect();
   attach(sockets[0]);
@@ -66,19 +66,6 @@ test('reconnect joins the known session, waits for a fresh frame, and never repe
   assert.equal(connection.ready, false);
   frames.shift()();
   assert.equal(connection.ready, true);
-});
-
-test('session creation without an acknowledged ID is never retried', async t => {
-  const { connection, sockets, errors, greet } = fixture(t, {
-    operation: 'session-new', run: { workspace: '/fixture', title: '', size },
-  });
-  const opened = assert.rejects(connection.connect(), /Connection lost/);
-  greet(sockets[0]);
-  sockets[0].close();
-  await opened;
-  t.mock.timers.tick(30000);
-  assert.equal(sockets.length, 1);
-  assert.equal(errors[0].retrying, false);
 });
 
 test('leaving a session cancels retries and pending frame callbacks', async t => {
@@ -110,4 +97,17 @@ test('reconnect backs off on transport errors but stops on identity mismatch', a
   assert.equal(sockets.length, 3);
   assert.equal(errors.at(-1).retrying, false);
   assert.equal(sockets[2].sent.length, 0);
+});
+
+test('an uncertain prepared session start is never submitted twice', async t => {
+  const request = { operation: 'session-start', session: 'one', revision: 3, size };
+  const { connection, sockets, errors, greet } = fixture(t, request);
+  const opened = assert.rejects(connection.connect(), /Connection lost/);
+  greet(sockets[0]);
+  sockets[0].close();
+  await opened;
+  t.mock.timers.tick(30000);
+  assert.equal(sockets.length, 1);
+  assert.equal(errors[0].retrying, false);
+  assert.deepEqual(sockets[0].sent[0].request, { ...request, protocol: VERSION });
 });

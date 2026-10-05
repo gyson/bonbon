@@ -74,7 +74,7 @@ bonbon --dir ~/bonbon-experiment query "SELECT id,title FROM sessions"
 ```
 
 `--dir` is BonBon's instance directory. It does not change the agent's working directory;
-choose a saved project or standalone workspace in the UI. Relative instance paths resolve
+click ＋ beside a saved project in the UI to open its draft. Relative instance paths resolve
 from the client's current directory. Paths with symlinks resolve to the same instance.
 
 BonBon sets `BONBON_SESSION` and the canonical `BONBON_DIR` inside each wrapped agent.
@@ -163,8 +163,9 @@ The operating system allocates a free port. A second server cannot own the same 
 
 On macOS, a new server also launches a menu bar companion from this same executable.
 **Open UI** opens the verified server's home page. **Quit BonBon** stops that server
-and its active sessions, then closes the menu. It has no separate Stop, Settings,
-or Logs action. There is no persistent Running label.
+and its active sessions, then closes the menu. Quit retains and verifies the original
+server connection, so missing or replaced `server.json` files do not prevent it.
+It has no separate Stop, Settings, or Logs action. There is no persistent Running label.
 
 Pass `--no-menubar` to start without the menu, for example on a headless Mac or in
 automated checks. The flag also applies to restart. Linux never launches the menu.
@@ -286,9 +287,12 @@ The tables are:
 | `projects` | `id`, `name`, `workspace`, `created` |
 | `sessions` | `id`, `title`, `workspace`, `created`, `project_id` (NULL for standalone) |
 | `runs` | `id`, `session_id`, `status`, `started`, `ended`, `pid`, `detail` |
+| `settings` | `id`, `revision`, `data` (JSON defaults and tool presets) |
+| `preparations` | `session_id`, `revision`, `state`, `data` (JSON launch choices) |
+| `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 4. Earlier formats are rejected; select a fresh `--dir`.
+The schema uses format 5. Earlier formats are rejected; select a fresh `--dir`.
 Projects are managed in the UI; there are no project CLI commands. Removing a custom
 project clears session membership but preserves its recorded workspace and history.
 

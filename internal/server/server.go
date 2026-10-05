@@ -26,6 +26,7 @@ type Server struct {
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	mu       sync.Mutex
+	launchMu sync.Mutex
 	sessions map[string]*runningSession
 }
 
@@ -46,7 +47,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 	if err := instance.Publish(s.info); err != nil {
 		return err
 	}
-	defer instance.Remove(s.info.DataDir)
+	defer instance.RemoveOwned(s.info)
 	upgrader := websocket.Upgrader{HandshakeTimeout: 5 * time.Second}
 	mux := http.NewServeMux()
 	webui.Register(mux)
@@ -133,6 +134,34 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		return
 	}
 	switch request.Operation {
+	case "settings-get":
+		result, err := s.store.Settings()
+		s.reply(conn, result, err)
+	case "settings-save":
+		if request.Settings == nil {
+			s.reply(conn, nil, errors.New("missing settings"))
+			return
+		}
+		result, err := s.store.SaveSettings(*request.Settings)
+		s.reply(conn, result, err)
+	case "workspace-inspect":
+		s.reply(conn, inspectRepository(ctx, request.Workspace), nil)
+	case "project-draft":
+		result, err := s.prepareProject(ctx, request.Project)
+		s.reply(conn, result, err)
+	case "session-config":
+		if request.Preparation == nil {
+			result, err := s.store.Session(request.Session)
+			s.reply(conn, result, err)
+		} else {
+			result, err := s.savePreparation(request)
+			s.reply(conn, result, err)
+		}
+	case "session-start":
+		s.startPrepared(ctx, conn, request)
+	case "worktree-remove":
+		err := s.removeWorktree(ctx, request.Session)
+		s.reply(conn, map[string]bool{"removed": err == nil}, err)
 	case "stop":
 		if request.Instance != s.info.Instance {
 			s.reply(conn, nil, errors.New("server instance changed; retry stop"))
@@ -155,8 +184,6 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "session-rename":
 		err := s.store.RenameSession(request.Session, request.Name)
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
-	case "session-new":
-		s.newSession(ctx, conn, request.Run)
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Size)
 	case "session-list":

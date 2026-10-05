@@ -30,7 +30,7 @@ server services. Do not add a separate browser session store or database writer.
   minimal macOS menu bar is implemented; see [SPEC.md](SPEC.md#macos-menu-bar).
 
 See [GOAL.md](GOAL.md#future-workspace-interface) for the intended workspace experience.
-Keep the deployed Go server self-contained. Browser launches select a saved project or standalone workspace and use the server
+Keep the deployed Go server self-contained. Browser launches start from a saved project and use the server
 environment for the shell. Saved projects and General are implemented; see [SPEC.md](SPEC.md#projects-and-launches).
 
 ### Acceptance checks for future additions
@@ -72,27 +72,18 @@ this around Codex or another specific agent.
   output as terminal activity, not proof that useful work is progressing. Do not use
   activity indicators to submit messages automatically.
 
-## Instance settings and managed worktrees
+## Worktree follow-ups
 
-Use the instance directory selected by `--dir` for future BonBon-owned files. Keep
-durable settings in SQLite when settings are needed. `server.json` remains disposable
-runtime connection information; it is not a configuration file to edit.
+Settings, tool command presets, session preparation, and managed worktrees are implemented;
+see [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees).
 
-Add optional managed Git worktrees for sessions that need independent files. Keep
-opening an existing shared directory available in the UI.
-
-- Let the user select a repository and base branch or commit for a new worktree.
-- Record the selected base and define how chosen uncommitted changes are copied.
-  Report exclusions; conversation history does not restore filesystem state.
-- Store worktree metadata in SQLite and expose creation and selection through the
-  shared server protocol.
-- Define cleanup that preserves local changes and does not remove an active session's
-  workspace. Verify independent edits across two worktrees.
-
-Managed worktrees may live under `<instance>/worktrees/`. Workspace contents remain
-separate from conversation history and cloud database backups. Before adding worktree
-actions, define source state, handling of uncommitted files, and cleanup behavior.
-No settings interface or managed worktree directory are implemented yet.
+- Add optional copying of selected uncommitted changes only after defining exclusions,
+  partial failure recovery, and a stable source snapshot.
+- Evaluate setup commands and support for submodules and sparse checkouts with real
+  repositories. Do not infer these capabilities from ordinary checkout fixtures.
+- Consider moving an existing session to another workspace separately from creating a
+  new session. An active shell cannot be moved by changing its recorded path.
+- Add project-specific defaults if daily use needs them. Current defaults are per instance.
 
 ## Fork a session from an earlier point
 

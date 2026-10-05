@@ -15,7 +15,7 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 const (
 	sessionColumns = "id,title,workspace,created,COALESCE(project_id,'')"
@@ -26,12 +26,14 @@ const (
 var ErrNotFound = errors.New("session not found")
 
 type Session struct {
-	ProjectID string `json:"projectId"`
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Workspace string `json:"workspace"`
-	Created   string `json:"created"`
-	Run       *Run   `json:"run,omitempty"`
+	ProjectID   string       `json:"projectId"`
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Workspace   string       `json:"workspace"`
+	Created     string       `json:"created"`
+	Run         *Run         `json:"run,omitempty"`
+	Preparation *Preparation `json:"preparation,omitempty"`
+	Worktree    *Worktree    `json:"worktree,omitempty"`
 }
 
 type Run struct {
@@ -131,6 +133,17 @@ func initialize(db *sql.DB) error {
                 status TEXT NOT NULL, started TEXT NOT NULL, ended TEXT NOT NULL DEFAULT '',
                 pid INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, data TEXT NOT NULL);
+            INSERT INTO settings VALUES(1,0,'{"defaultTool":"","worktree":false,"base":"HEAD","tools":[]}');
+            CREATE TABLE preparations (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id), revision INTEGER NOT NULL,
+                state TEXT NOT NULL, data TEXT NOT NULL
+            );
+            CREATE TABLE worktrees (
+                session_id TEXT PRIMARY KEY REFERENCES sessions(id), path TEXT NOT NULL UNIQUE,
+                repository TEXT NOT NULL, base TEXT NOT NULL, commit_id TEXT NOT NULL,
+                branch TEXT NOT NULL, state TEXT NOT NULL
+            );
             CREATE TABLE events (
                 seq INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL REFERENCES sessions(id), run_id TEXT NOT NULL,
@@ -181,6 +194,9 @@ func checkSchema(db *sql.DB) error {
 		"SELECT " + sessionColumns + " FROM sessions LIMIT 0",
 		"SELECT " + runColumns + " FROM runs LIMIT 0",
 		"SELECT " + eventColumns + " FROM events LIMIT 0",
+		"SELECT revision,data FROM settings LIMIT 0",
+		"SELECT session_id,revision,state,data FROM preparations LIMIT 0",
+		"SELECT session_id,path,repository,base,commit_id,branch,state FROM worktrees LIMIT 0",
 	} {
 		rows, err := db.Query(query)
 		if err != nil {
