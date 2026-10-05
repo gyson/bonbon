@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -14,6 +16,57 @@ import (
 	"bonbon/internal/history"
 	"bonbon/internal/instance"
 )
+
+func TestServerMigratesArchiveBeforeServingAndRecovery(t *testing.T) {
+	directory := t.TempDir()
+	db, err := sql.Open("sqlite3", filepath.Join(directory, "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, name := range []string{"format-3.sql", "records.sql"} {
+		fixture, err := os.ReadFile(filepath.Join("..", "..", "internal", "history", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(string(fixture)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	startTestServer(t, directory)
+	query := `SELECT
+ (SELECT hex(data) FROM events WHERE seq=42),
+ (SELECT text FROM events WHERE seq=43),
+ (SELECT status FROM runs WHERE id='unfinished'),
+ (SELECT count(*) FROM events WHERE kind='notice'),
+ (SELECT count(*) FROM projects WHERE id='general'),
+ (SELECT revision FROM settings WHERE id=1),
+ (SELECT count(*) FROM preparations),
+ (SELECT count(*) FROM worktrees),
+ (SELECT count(*) FROM runs)`
+	var first string
+	for attempt := range 2 {
+		output, err := testCommand("--dir", directory, "query", query).CombinedOutput()
+		var result history.QueryResult
+		if err != nil || json.Unmarshal(output, &result) != nil {
+			t.Fatalf("query after upgrade: %s %v", output, err)
+		}
+		want := `[["68656C6C6F0D0300","café","interrupted",1,1,0,0,0,2]]`
+		got, err := json.Marshal(result.Rows)
+		if err != nil || string(got) != want {
+			t.Fatalf("migration/recovery result: %s %v", got, err)
+		}
+		if attempt == 0 {
+			first = string(output)
+			if output, err = testCommand("--dir", directory, "server", "restart").CombinedOutput(); err != nil {
+				t.Fatalf("restart upgraded server: %s %v", output, err)
+			}
+		} else if string(output) != first {
+			t.Fatal("restart changed migrated data or repeated recovery")
+		}
+	}
+}
 
 func testCommand(args ...string) *exec.Cmd {
 	// Runtime fixtures do not need a desktop or a native menu for each instance.

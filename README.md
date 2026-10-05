@@ -6,9 +6,9 @@ A local web workspace for agent CLI tools. The server owns interactive shells,
 terminal screens, and history. The browser handles sessions and terminal interaction
 while the server saves original input, output, and run metadata.
 
-**Early development:** breaking changes are expected and allowed. Commands, APIs,
-configuration, and storage formats are not stable. We prioritize a clean, readable
-codebase and do not maintain legacy code or backward compatibility layers.
+**Daily use:** database upgrades preserve existing history and settings through
+migrations embedded in the binary. Commands and APIs may still change during early
+development. Keep the implementation simple while preserving users' durable data.
 
 The CLI command and executable are named `bonbon`. See the
 [command reference](docs/COMMANDS.md) for every command, its options, examples,
@@ -38,6 +38,8 @@ bonbon update
 ```
 
 Then run `bonbon server restart` when ready; restarting ends active sessions.
+The new server applies any pending database migrations before accepting requests.
+`bonbon update` itself only replaces the executable and leaves the database alone.
 
 ## Build and run
 
@@ -133,9 +135,10 @@ After rebuilding, use `server restart` to serve the new embedded assets; restart
 active sessions. Ports can change after restart, so use the newly printed URL.
 This change uses protocol `bonbon/15`. `server restart` can replace a server using a
 different session protocol when it supports the same verified shutdown request.
-UI and query commands still require the current protocol. SQLite now uses format 6
-for settings, preparations, managed worktrees, and session archive flags. Older formats
-are rejected; use a fresh `--dir` instead of restarting against an older archive.
+UI and query commands still require the current protocol. SQLite uses format 6 for
+settings, preparations, managed worktrees, and session archive flags. Formats 3–5
+upgrade automatically when the new server starts; no fresh `--dir` is needed. See
+[database upgrades](#database-upgrades) for details.
 
 The sidebar groups sessions and drafts under saved projects, with 100 items per page,
 newest terminal activity first. Search matches session names, IDs, folders, and project
@@ -348,14 +351,32 @@ outside BonBon's database. General is a working folder, not a backup of those fi
 Backup and restore are not available in this version. Future cloud backup work is in
 [PLAN.md](docs/PLAN.md). No cloud service or replication process is configured or started.
 
-The current database format is version 4. Other database formats are
-rejected; there is no migration path. Use a fresh data directory when the format
-changes, for example:
+## Database upgrades
 
-```sh
-./bin/bonbon --dir ~/.bonbon-dev/test-history server start
-./bin/bonbon --dir ~/.bonbon-dev/test-history ui
-```
+The current SQLite format is 6. Formats 3 (from v0.0.1), 4, and 5 upgrade automatically
+to 6 on server start or restart. Format 6 databases need no schema migration.
+Upgrades preserve sessions, runs, original events, drafts,
+attachments, project membership, settings, and worktree metadata. Format 3 sessions
+remain standalone and keep their recorded workspace paths.
+
+Every binary includes the ordered SQL scripts under `internal/history/migrations/`
+through Go embedding. No SQLite CLI, downloaded scripts, or extra files are needed.
+All pending steps and their version changes commit in one transaction. A failed
+migration rolls back the upgrade and stops startup; inspect `server.log` for the
+failing step. Reopening an upgraded database does not repeat completed migrations.
+
+Formats 1 and 2, nonempty unversioned databases, and formats newer than this executable
+are rejected without changing their contents. Use a newer executable for a newer
+format. Downgrades are not implemented. These migrations do not provide backups;
+cloud backup remains planned separately.
+
+For contributors: keep released migration files unchanged. Add the next numbered SQL
+file (for example, `007.sql`) and increase `schemaVersion` for each schema or durable
+data format change, including stored JSON changes. Scripts must stay inside the
+runner's transaction: do not include transaction control, `VACUUM`, or version PRAGMAs.
+Fresh databases run the same chain from the format 3 baseline. Keep frozen schemas
+under `internal/history/testdata/` independent of migration code, and test record
+preservation, skipped versions, rollback, repeat opens, and concurrent upgrades.
 
 ## Validation and limits
 
@@ -373,8 +394,10 @@ explicit stop, recent session listing, SQL scope, and independent sessions shari
 Project fixtures cover canonical folder uniqueness, protected General identity,
 launching shells in both project types, removal while running, and restart persistence.
 These use synthetic shells, not a real agent.
-Storage tests cover read-only SQL, cancellation, result limits, persistence across
-database reopen, and format rejection.
+Storage tests cover read-only SQL, cancellation, result limits, database reopen,
+upgrades from frozen formats 3–6, preservation of original records and event sequences,
+rollback, concurrent upgrades, and unsupported-format rejection. Server subprocess
+fixtures verify startup migration, history queries, and interruption recovery after upgrade.
 
 Native agent resume and fresh continuation with history retrieval are not implemented.
 A recording preserves evidence; it does not restore internal model state. Browser views

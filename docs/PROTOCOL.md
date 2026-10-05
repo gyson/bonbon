@@ -16,7 +16,9 @@ server greeting and first request. No WebSocket subprotocol header is required.
 Session operations and health checks reject unsupported versions. Shutdown uses the
 verified server's advertised version, so `server restart` can replace a server after a
 session protocol change. This requires the same greeting and shutdown envelope; there
-is no fallback for previous transports. SQLite format 6 is required; older archives are rejected without migration.
+is no fallback for previous transports. SQLite format 6 is current; the server upgrades
+formats 3–5 before accepting requests. Older supported database formats do not imply
+support for their previous WebSocket protocols.
 
 ## Connections and requests
 
@@ -117,8 +119,9 @@ An empty title defaults to the tool and workspace names. Terminal size is
 
 Protocol 15 supports multiple drafts per project, archive/restore, and paginated
 collection search. Project records no longer contain a draftId. Session records and
-summaries include an archived boolean. SQLite format 6 stores this independent flag. Use a fresh
-instance directory for older archives; there is no migration. Rebuild, start the new
+summaries include an archived boolean. SQLite format 6 stores this independent flag.
+Server startup upgrades formats 3–5 automatically using embedded migrations. Database
+compatibility is separate from the WebSocket protocol version. Rebuild, start the new
 server, and reload the browser.
 
 Projects have stable IDs and unique canonical workspace paths. Names are trimmed and

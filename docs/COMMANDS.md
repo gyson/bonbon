@@ -1,8 +1,8 @@
 # BonBon command reference
 
 This guide covers BonBon CLI commands, when to use them, and what they change. The CLI
-connects to a separate local server. BonBon is in early development. Commands and
-storage formats may change without backward compatibility.
+connects to a separate local server. Commands may change during early development.
+Supported database formats upgrade automatically while preserving stored data.
 
 The CLI command and executable are named `bonbon`. From a local checkout, use the path
 to your executable, such as `./bin/bonbon` or `./bin/release/bonbon`. Replace uppercase
@@ -136,7 +136,8 @@ no effect on this command. `BONBON_INSTALL_DIR` also does not redirect an update
 **Impact:** contacts GitHub and replaces the executable through an atomic rename.
 It does not open an instance, change history, or restart a server. Existing sessions
 continue on the running version. Run `bonbon server restart` when ready to use the
-new version; restarting ends active sessions.
+new version; restarting ends active sessions. The new server applies pending embedded
+database migrations at startup, before accepting requests.
 
 ## Start the server
 
@@ -158,7 +159,10 @@ to use the web UI. The command does not launch a browser. See the
 
 **Impact:** creates or opens the selected history archive and appends server output to
 `server.log`. It creates private data and lock files as needed, saves the built-in
-General project, and creates its `<instance>/workspaces/general` folder. It starts no shell or agent; create sessions in the UI.
+General project, and creates its `<instance>/workspaces/general` folder. Before serving
+requests, it upgrades supported older database formats using SQL embedded in the binary.
+All pending migrations commit together; failure rolls them back and stops startup.
+It starts no shell or agent; create sessions in the UI.
 The operating system allocates a free port. A second server cannot own the same directory. If startup fails, inspect the printed log path.
 
 On macOS, a new server also launches a menu bar companion from this same executable.
@@ -243,6 +247,7 @@ request described above. If stopping fails, it does not launch a replacement.
 
 **Impact:** ends all active agent runs and preserves their history, then opens the same
 archive in a new server process with a new instance ID and automatically selected port.
+The new server applies pending database migrations before accepting requests.
 Clients discover the new endpoint on their next command. It does not resume agents or
 replay input. Restart can fail to start the new process after the previous server has stopped; check the reported
 error and log path.
@@ -292,7 +297,10 @@ The tables are:
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 6. Earlier formats are rejected; select a fresh `--dir`.
+The schema uses format 6. Server startup upgrades formats 3–5 automatically.
+Format 6 needs no migration. Formats 1 and 2, nonempty unversioned databases, and
+newer formats are rejected without changing their contents. Downgrades are not
+supported. No separate migration command or SQLite CLI is needed.
 Projects are managed in the UI; there are no project CLI commands. Removing a custom
 project clears session membership but preserves its recorded workspace and history.
 Archiving hides a draft or finished session in the UI. SQL still includes it unless
