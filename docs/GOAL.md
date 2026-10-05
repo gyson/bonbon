@@ -69,10 +69,10 @@ Use the UI to browse sessions. Keep durable BonBon data in SQLite. Defer backup 
 
 ## Future workspace interface
 
-Keep a terminal-centered workspace with an optional message editor:
+Keep a terminal-centered workspace with a resizable message editor:
 
 - **Left:** saved projects, including General, with sessions for browsing and switching conversations.
-- **Center:** the interactive terminal, with an optional multiline editor below it.
+- **Center:** the interactive terminal, with a multiline editor below it and a draggable divider to adjust their heights.
 - **Right:** supporting views such as a code diff or file preview.
 
 Support multiple windows for viewing different sessions at the same time. Each window shows one selected session. Switching sessions in one window must not change another window. Windows share recorded history and run state; opening another window must not duplicate an existing agent run. Windows showing the same session share one process and one controller.

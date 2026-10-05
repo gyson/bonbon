@@ -46,18 +46,22 @@ h1 { margin: 0 0 7px; font-size: 18px; font-weight: 600; overflow: hidden; text-
 .welcome-notes strong { font-size: 12px; font-weight: 600; }
 .welcome-notes p { font-size: 12px; color: #91958b; line-height: 1.7; }
 #notice { padding: 12px 30px; background: #fff5dd; color: #755823; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-#session-view { flex: 1; min-height: 400px; display: flex; flex-direction: column; padding: 20px 26px 18px; }
+#session-view { flex: 1; min-height: 480px; display: flex; flex-direction: column; padding: 20px 26px 18px; }
+#terminal-pane { flex: 1; min-height: 180px; display: flex; flex-direction: column; }
 .view-heading { display: flex; justify-content: space-between; color: #8a9187; font-size: 10px; letter-spacing: 1px; padding: 0 0 12px; }
 #session-id { font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: 0; }
-#terminal { flex: 1; min-height: 220px; background: #18201e; border-radius: 9px; padding: 16px; overflow: auto; }
+#terminal { flex: 1; min-height: 0; background: #18201e; border-radius: 9px; padding: 16px; overflow: auto; }
 .terminal-host { height: 100%; }
-.terminal-footer { display: flex; justify-content: space-between; gap: 20px; color: #92988d; font-size: 11px; padding: 12px 0; }
-.terminal-footer { align-items: center; gap: 12px; }
+.terminal-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 12px; color: #92988d; font-size: 11px; padding: 10px 0 0; }
 #terminal-hint { flex: 1; }
-#composer-toggle { font-size: 11px; padding: 6px 10px; color: #385c46; }
-#composer { flex-shrink: 0; border: 1px solid #dce3da; border-radius: 12px; padding: 14px 16px 10px; background: #fff; margin-bottom: 12px; box-shadow: 0 3px 12px #183c2506; }
+#session-divider { flex: 0 0 20px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: row-resize; touch-action: none; user-select: none; }
+#session-divider > span { width: 40px; height: 4px; border-radius: 2px; background: #b8c4ba; }
+#session-divider:hover > span, #session-divider:focus-visible > span, .resizing-session #session-divider > span { background: #468565; }
+body.resizing-session, body.resizing-session * { cursor: row-resize !important; user-select: none !important; }
+#composer { flex: 0 0 240px; min-height: 220px; display: flex; flex-direction: column; overflow: auto; border: 1px solid #dce3da; border-radius: 12px; padding: 14px 16px 10px; background: #fff; box-shadow: 0 3px 12px #183c2506; }
+#composer > :not(textarea) { flex-shrink: 0; }
 #composer > label { display: block; color: #58705e; font-size: 11px; margin-bottom: 8px; }
-#composer-text { border: 0; border-radius: 0; padding: 2px 0 10px; resize: vertical; min-height: 82px; max-height: 45dvh; line-height: 1.6; background: transparent; }
+#composer-text { flex: 1; border: 0; border-radius: 0; padding: 2px 0 10px; resize: none; min-height: 60px; line-height: 1.6; background: transparent; }
 #composer-text:focus-visible { outline-offset: 5px; }
 .composer-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .composer-actions button { font-size: 12px; }

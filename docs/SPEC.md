@@ -370,7 +370,7 @@ Large interrupted recordings can take longer to reconstruct. This restores a dis
 not a process or native agent context. Terminal dimensions are limited to 2–512 columns
 and 1–256 rows to bound emulator memory.
 
-Session views show the server-rendered terminal and optional message editor. There is
+Session views show the server-rendered terminal and message editor. There is
 no separate text-history panel or browser SQL client. The `bonbon query` command reads
 archived events. There is no semantic chat transcript or file/diff view.
 
@@ -380,8 +380,13 @@ The final display kept its recorded layout. This check did not run a real agent 
 
 ### Message editor
 
-The multiline composer is visible below preparation and terminal views. Hide editor
-can collapse it after launch. Direct terminal interaction remains available. Enter
+The multiline composer stays visible below preparation and terminal views. A horizontal
+divider with a centered grip resizes the terminal and editor after launch. Drag it with
+a mouse or touch, or focus it and use Up/Down to resize and Home/End to reach the limits.
+Both panes keep a minimum height; editor contents scroll when needed. The editor size
+stays with the browser view across session switches and resets on reload. Resizing
+uses the existing terminal viewport updates; only the controller changes the PTY size.
+Direct terminal interaction remains available. Enter
 inserts a newline; Send sends one
 `input` control to the attached PTY with the message followed by Enter. When the
 application enables bracketed paste, the message uses its paste delimiters. Newlines
@@ -565,6 +570,12 @@ There are no backup or restore commands, snapshot/export helpers, or cloud repli
 integrations in this version.
 
 ## Validation
+
+A Chrome check with a temporary shell verified divider dragging, arrow keys and size
+limits, terminal dimension updates, and preserved editor size and text across a project
+draft switch. A narrow layout at 250% zoom kept the editor controls reachable. Reloading
+a stopped session restored its draft and reset the divider size. Touch devices and real
+agent CLIs were not used for this check. The temporary shell and server were stopped.
 
 New launch fixtures cover persistent defaults, stale setting/configuration saves,
 command snapshots after preset removal, interrupted launch claims, Git subfolder and
