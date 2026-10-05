@@ -40,6 +40,9 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 		DataDir: filepath.Dir(store.Path), Port: listener.Addr().(*net.TCPAddr).Port,
 		Executable: executable,
 	}}
+	if err := s.ensureGeneral(); err != nil {
+		return err
+	}
 	if err := instance.Publish(s.info); err != nil {
 		return err
 	}
@@ -137,6 +140,23 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		}
 		s.reply(conn, map[string]bool{"stopping": true}, nil)
 		s.cancel()
+	case "project-list":
+		result, err := s.store.Projects()
+		s.reply(conn, result, err)
+	case "project-add":
+		result, err := s.addProject(request.Name, request.Workspace)
+		s.reply(conn, result, err)
+	case "project-rename":
+		err := s.store.RenameProject(request.Project, request.Name)
+		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
+	case "project-remove":
+		err := s.store.RemoveProject(request.Project)
+		s.reply(conn, map[string]bool{"removed": err == nil}, err)
+	case "session-rename":
+		err := s.store.RenameSession(request.Session, request.Name)
+		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
+	case "history-instructions":
+		s.reply(conn, s.historyInstructions(), nil)
 	case "session-new":
 		s.newSession(ctx, conn, request.Run)
 	case "session-resume":

@@ -22,7 +22,7 @@ func testStore(t *testing.T) *Store {
 
 func create(t *testing.T, s *Store) Session {
 	t.Helper()
-	item, err := s.CreateSession("Synthetic", t.TempDir())
+	item, err := s.CreateSession("Synthetic", t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestConcurrentFirstOpen(t *testing.T) {
 			<-start
 			store, err := Open(path)
 			if err == nil {
-				_, err = store.CreateSession("Concurrent run", "/tmp")
+				_, err = store.CreateSession("Concurrent run", "/tmp", "")
 				store.Close()
 			}
 			results <- err

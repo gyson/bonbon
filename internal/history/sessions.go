@@ -13,7 +13,7 @@ type RecentSession struct {
 // RecentSessions orders by the last recorded activity, including output emitted
 // while no client is attached. The archive format does not need a second clock.
 func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
-	rows, err := s.db.Query(`SELECT id,title,workspace,created,
+	rows, err := s.db.Query(`SELECT id,title,workspace,created,COALESCE(project_id,''),
         COALESCE((SELECT created FROM events WHERE session_id=sessions.id ORDER BY seq DESC LIMIT 1),created) AS updated
         FROM sessions ORDER BY julianday(updated) DESC,
         COALESCE((SELECT max(seq) FROM events WHERE session_id=sessions.id),0) DESC,id
@@ -24,7 +24,7 @@ func (s *Store) RecentSessions(limit int) ([]RecentSession, error) {
 	result := []RecentSession{}
 	for rows.Next() {
 		var item RecentSession
-		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.Updated); err != nil {
+		if err = rows.Scan(&item.ID, &item.Title, &item.Workspace, &item.Created, &item.ProjectID, &item.Updated); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -60,9 +60,9 @@ func (s *Store) LatestRun(id string) (*Run, error) {
 	return &r, err
 }
 
-func (s *Store) CreateSession(title, workspace string) (Session, error) {
-	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now()}
-	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created) VALUES(?,?,?,?)", session.ID, session.Title, session.Workspace, session.Created)
+func (s *Store) CreateSession(title, workspace, projectID string) (Session, error) {
+	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now(), ProjectID: projectID}
+	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created,project_id) VALUES(?,?,?,?,NULLIF(?,''))", session.ID, session.Title, session.Workspace, session.Created, projectID)
 	return session, err
 }
 

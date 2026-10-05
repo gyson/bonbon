@@ -11,12 +11,12 @@ prefix or binary envelope. The limit is 16 MiB per message, including all fragme
 Binary messages, malformed JSON, and multiple JSON values in one message are rejected.
 Terminal bytes use base64 in `data`; this preserves arbitrary bytes and control codes.
 
-This is an early development protocol. The version is `bonbon/11`, checked in the
+This is an early development protocol. The version is `bonbon/12`, checked in the
 server greeting and first request. No WebSocket subprotocol header is required.
 Session operations and health checks reject unsupported versions. Shutdown uses the
 verified server's advertised version, so `server restart` can replace a server after a
 session protocol change. This requires the same greeting and shutdown envelope; there
-is no fallback for previous transports. The SQLite format is unchanged.
+is no fallback for previous transports. SQLite format 4 is required; older archives are rejected without migration.
 
 ## Connections and requests
 
@@ -26,7 +26,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/11",
+    "protocol": "bonbon/12",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -54,7 +54,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/11",
+    "protocol": "bonbon/12",
     "operation": "session-list",
     "limit": 10
   }
@@ -67,6 +67,12 @@ operations.
 
 | Operation | Additional request fields | Reply |
 | --- | --- | --- |
+| `project-list` | None | `result`, containing projects with `id`, `name`, `workspace`, and `created` |
+| `project-add` | `workspace`, optional `name` | `result`, containing the new project |
+| `project-rename` | `project` ID, `name` | `result`, containing `renamed` |
+| `project-remove` | `project` ID | `result`, containing `removed`; sessions become standalone |
+| `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
+| `history-instructions` | None | `result`, containing a string to insert into a draft; no terminal input |
 | `session-list` | `limit`, default 10, range 1–1000 | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
@@ -81,7 +87,9 @@ Ordinary operations send one reply, then close the connection. Replies use
 RPC requests have no IDs, connection multiplexing, or automatic retries. Do not retry a session creation just
 because the connection closed before its reply; creation may already have succeeded.
 
-`run` contains only `workspace`, `title`, and `size`. The server resolves its `$SHELL`
+`run` contains either `projectId` or `workspace`, plus `title` and `size`.
+The server resolves a project ID to its saved workspace. Both fields together are
+rejected. An unknown project or missing folder fails the launch. The server resolves its `$SHELL`
 from PATH or an absolute path, falling back to `/bin/sh` when unset. Relative shell
 paths are rejected. It starts the shell with `-i`, using its startup environment and
 `TERM=xterm-256color`. Clients do not supply shell settings, environment, or commands.
@@ -94,10 +102,23 @@ canonical paths. Multiple sessions may share the same or overlapping workspace.
 An empty title defaults to the shell and workspace names. Terminal size is
 `{"rows":24,"cols":80}`, with 2–512 columns and 1–256 rows.
 
-Protocol 11 removes client-supplied launch environments and shell settings, along with
-redundant server metadata in session replies. The CLI session commands and terminal
-client are removed. Rebuild and restart the server, then reload the browser. SQLite
-remains format 3; original recordings are unchanged.
+Protocol 12 adds project operations, project launches, session renaming, and retrieval
+guidance. SQLite format 4 stores project metadata and session membership. Use a fresh
+instance directory for older archives; there is no migration. Rebuild, start the new
+server, and reload the browser.
+
+Projects have stable IDs and unique canonical workspace paths. Names are trimmed and
+must contain 1–200 characters without control characters. General has ID `general`;
+the server creates it at startup under `<instance>/workspaces/general`. Rename and
+remove requests for General fail. Removing a custom project preserves sessions and
+running processes, clearing only their project membership. Session summaries include
+`projectId`, an empty string for standalone sessions. Their `workspace` remains the
+canonical path recorded at launch.
+
+`history-instructions` returns a plain-text guide with commands for the verified server's
+executable and instance. Clients may insert it into a draft. Requesting the guide changes
+no history and sends no input. It does not confer extra query scope or indicate that an
+agent has read any history. The browser saves inserted instructions using `composer-draft`.
 
 ## Terminal streams
 
@@ -219,13 +240,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/11") {
+    if (message.server.protocol !== "bonbon/12") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/11", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/12", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

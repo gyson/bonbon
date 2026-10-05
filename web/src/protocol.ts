@@ -1,11 +1,12 @@
 // The browser uses the same one-request-per-connection protocol as the Go CLI.
-export const VERSION = 'bonbon/11';
+export const VERSION = 'bonbon/12';
 
 // These types mirror internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
 
 export interface Run {
-  workspace: string;
+  projectId?: string;
+  workspace?: string;
   title: string;
   size: Size;
 }
@@ -19,7 +20,10 @@ export interface ServerInfo {
   executable: string;
 }
 
+export interface Project { id: string; name: string; workspace: string; created: string }
+
 export interface SessionInfo {
+  projectId: string;
   id: string;
   title: string;
   workspace: string;
@@ -41,7 +45,12 @@ type UploadRequest = { operation: 'composer-attach'; session: string; upload: { 
 
 type ListRequest = { operation: 'session-list'; limit?: number };
 type StopSessionRequest = { operation: 'session-stop'; session: string };
-type RPCRequest = ListRequest | StopSessionRequest | DraftRequest | UploadRequest;
+type ProjectListRequest = { operation: 'project-list' };
+type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
+type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
+type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
+type InstructionsRequest = { operation: 'history-instructions' };
+type RPCRequest = ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest | InstructionsRequest;
 export type StreamRequest =
   | { operation: 'session-new'; run: Run }
   | { operation: 'session-resume'; session: string; size: Size };
@@ -223,6 +232,11 @@ export class Peer {
   }
 }
 
+export function call(server: ServerInfo, request: ProjectListRequest): Promise<Project[]>;
+export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
+export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;
+export function call(server: ServerInfo, request: ProjectRemoveRequest): Promise<{ removed: boolean }>;
+export function call(server: ServerInfo, request: InstructionsRequest): Promise<string>;
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionInfo[]>;
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;

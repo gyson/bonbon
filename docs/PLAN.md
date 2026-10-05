@@ -24,14 +24,17 @@ server services. Do not add a separate browser session store or database writer.
   belongs in the core, scoped to that workspace.
 - Add verified agent-specific attachment delivery where plain file references are
   insufficient. Add imports and session forks when their core operations exist.
+- Evaluate automatic delivery of history-search instructions through each CLI's verified
+  workspace instruction mechanism. The current editor action only inserts a draft;
+  do not type instructions into an ordinary shell or infer prompt readiness.
 - Validate daily use with real agent CLIs in the browser. Synthetic terminal checks
   do not establish agent compatibility.
 - Add a desktop shell and global shortcut after the web workflow is useful. The
   minimal macOS menu bar is implemented; see [SPEC.md](SPEC.md#macos-menu-bar).
 
 See [GOAL.md](GOAL.md#future-workspace-interface) for the intended workspace experience.
-Keep the deployed Go server self-contained. Browser launches must continue to expose
-the workspace choice and use the server environment for its shell.
+Keep the deployed Go server self-contained. Browser launches select a saved project or standalone workspace and use the server
+environment for the shell. Saved projects and General are implemented; see [SPEC.md](SPEC.md#projects-and-launches).
 
 ### Acceptance checks for future additions
 
@@ -129,7 +132,7 @@ Production defaults to `~/.bonbon/history.sqlite`; development defaults to
 in the main file. Replication must account for this; periodically copying only the main
 file is insufficient. Server logs, `server.json`, process locks, and rebuildable caches
 are not history and must not be restored as live connection state.
-Workspace files, provider-managed credentials, and running processes are outside the
+Workspace files (including General), provider-managed credentials, and running processes are outside the
 backup scope.
 
 ### Candidate approach

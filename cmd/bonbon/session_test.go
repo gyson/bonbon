@@ -428,7 +428,7 @@ func TestInterruptedHistoryDoesNotBlockNewSessionsOrReplayInput(t *testing.T) {
 	dataDir, workspace := t.TempDir(), t.TempDir()
 	canonical, _ := agent.Canonical(workspace)
 	store := archive(t, dataDir)
-	session, err := store.CreateSession("Synthetic interrupted run", canonical)
+	session, err := store.CreateSession("Synthetic interrupted run", canonical, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +585,7 @@ func TestRecentSessionList(t *testing.T) {
 	store := archive(t, dataDir)
 	var first history.Session
 	for i := 0; i < 12; i++ {
-		session, err := store.CreateSession(fmt.Sprintf("session %d", i), t.TempDir())
+		session, err := store.CreateSession(fmt.Sprintf("session %d", i), t.TempDir(), "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -34,6 +34,7 @@ The core is Go, with a pure Go SQLite driver (`github.com/ncruces/go-sqlite3`; G
   the SVG source, not the generated image.
 - New sessions always use the server environment and launch an interactive shell (`$SHELL -i`, falling back to `/bin/sh -i`). Users run agents inside it. Resolve the shell from PATH or its configured absolute path; do not discover application bundles or add command selectors.
 - Preserve normal CLI arguments, terminal interaction, authentication, and permissions. Do not inject prompts into a new wrapped run.
+- Keep General and custom project metadata in SQLite. Projects supply launch defaults; sessions retain their actual workspace path. Removing a project must preserve session history, files, and processes. History-search instructions enter a saved draft only when requested; users explicitly submit them to an agent.
 - Build with `make build`. Start the server with `./bin/bonbon server start`, then open `./bin/bonbon ui`. Create a session in the UI and launch agents from its shell. Closing a tab leaves its view; the session and history capture continue. Use the UI's Stop session action to stop work.
 - Use `./bin/bonbon ui` to open the running instance's home page in the default browser. It uses the same instance selection and server verification as other clients.
 - On macOS, server start also launches a menu companion from the same executable.

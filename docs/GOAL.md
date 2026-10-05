@@ -29,7 +29,7 @@ A user should be able to start work with one agent, switch to another when neede
 
 ## What the user should be able to do
 
-1. **Manage conversations.** View, select, switch, and organize sessions in one interface, with durable history even when a CLI does not store it.
+1. **Manage conversations.** View, select, switch, and organize sessions under saved projects, with durable history even when a CLI does not store it. Start sessions from a project without choosing its folder again. Keep a built-in General project for work and history searches across projects.
 2. **Compose comfortably.** Edit multiline prompts, copy and paste, attach files, paste images, and retain drafts while switching conversations.
 3. **Switch agents manually.** The user chooses when to switch and which CLI to use next, including after a quota limit. BonBon prepares access to the relevant history for continuation; it does not automatically choose or switch agents.
 4. **Fork conversations.** Explore a different direction from an earlier point while retaining access to the history inherited by that fork.
@@ -48,7 +48,7 @@ Keep deployment self-contained; a desktop shell can come later.
 
 Keep the BonBon CLI small: `ui` opens the home page, `server start/stop/restart` manages
 the background server, `query` reads history, and `update` installs a new release.
-Session operations and terminal interaction belong in the UI. The UI selects the
+Session operations and terminal interaction belong in the UI. The UI selects a saved project or a standalone
 workspace; `bonbon ui` needs no path
 or session arguments. Shell launches use the server's environment.
 
@@ -72,7 +72,7 @@ Use the UI to browse sessions. Keep durable BonBon data in SQLite. Defer backup 
 
 Keep a terminal-centered workspace with an optional message editor:
 
-- **Left:** a list of sessions for browsing and switching conversations.
+- **Left:** saved projects, including General, with sessions for browsing and switching conversations.
 - **Center:** the interactive terminal, with an optional multiline editor below it.
 - **Right:** supporting views such as a code diff or file preview.
 

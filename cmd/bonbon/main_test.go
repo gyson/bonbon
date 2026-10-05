@@ -23,7 +23,7 @@ func TestInstanceDirectorySelection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		session, err := store.CreateSession(name, home)
+		session, err := store.CreateSession(name, home, "")
 		store.Close()
 		if err != nil {
 			t.Fatal(err)

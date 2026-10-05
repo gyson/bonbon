@@ -15,10 +15,10 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 const (
-	sessionColumns = "id,title,workspace,created"
+	sessionColumns = "id,title,workspace,created,COALESCE(project_id,'')"
 	runColumns     = "id,session_id,status,started,ended,pid,detail"
 	eventColumns   = "seq,session_id,run_id,kind,data,text,created"
 )
@@ -26,6 +26,7 @@ const (
 var ErrNotFound = errors.New("session not found")
 
 type Session struct {
+	ProjectID string `json:"projectId"`
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Workspace string `json:"workspace"`
@@ -117,9 +118,13 @@ func initialize(db *sql.DB) error {
 		}
 	}
 	if version == 0 {
-		_, err := db.Exec(fmt.Sprintf(`CREATE TABLE sessions (
+		_, err := db.Exec(fmt.Sprintf(`CREATE TABLE projects (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace TEXT NOT NULL UNIQUE, created TEXT NOT NULL
+            );
+            CREATE TABLE sessions (
                 id TEXT PRIMARY KEY, title TEXT NOT NULL,
-                workspace TEXT NOT NULL, created TEXT NOT NULL
+                workspace TEXT NOT NULL, created TEXT NOT NULL,
+                project_id TEXT REFERENCES projects(id) ON DELETE SET NULL
             );
             CREATE TABLE runs (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -132,6 +137,7 @@ func initialize(db *sql.DB) error {
                 kind TEXT NOT NULL, data BLOB NOT NULL,
                 text TEXT NOT NULL DEFAULT '', created TEXT NOT NULL
             );
+            CREATE INDEX sessions_project ON sessions(project_id);
             CREATE INDEX events_session ON events(session_id,seq);
             PRAGMA user_version=%d;`, schemaVersion))
 		if err != nil {
@@ -171,6 +177,7 @@ func enableWAL(db *sql.DB) error {
 
 func checkSchema(db *sql.DB) error {
 	for _, query := range []string{
+		"SELECT id,name,workspace,created FROM projects LIMIT 0",
 		"SELECT " + sessionColumns + " FROM sessions LIMIT 0",
 		"SELECT " + runColumns + " FROM runs LIMIT 0",
 		"SELECT " + eventColumns + " FROM events LIMIT 0",
@@ -190,7 +197,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanSession(row scanner) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.Title, &s.Workspace, &s.Created)
+	err := row.Scan(&s.ID, &s.Title, &s.Workspace, &s.Created, &s.ProjectID)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}
