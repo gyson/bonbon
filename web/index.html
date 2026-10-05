@@ -11,56 +11,78 @@
 <body>
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></div>
-    <button id="new-session" class="primary">＋ New session</button>
     <label class="search-label"><span class="sr-only">Filter projects and sessions</span><input id="filter" type="search" placeholder="Filter projects and sessions…"></label>
     <div class="section-heading"><span>PROJECTS · RECENT SESSIONS</span><button id="refresh" class="text-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button></div>
     <button id="add-project" class="add-project">＋ Add project</button>
     <nav id="sessions" aria-label="Projects and sessions"><p class="muted">Connecting…</p></nav>
+    <button id="settings-open">Settings</button>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
   <main>
     <header class="toolbar">
-      <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p></div>
-      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="stop" class="danger" disabled>Stop session</button></div>
+      <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div>
+      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="reconnect" hidden>Reconnect</button><button id="take-control" hidden>Take control</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>
     <section id="welcome" class="welcome">
       <span class="eyebrow">PICK UP WHERE YOU LEFT OFF</span>
       <h2>Your agents. One workspace.</h2>
-      <p>Add a project, start in General, or reopen a session.<br>BonBon keeps recording while you’re away.</p>
-      <button id="welcome-new" class="primary">Start a session <span aria-hidden="true">↗</span></button>
+      <p>Click ＋ beside a project to prepare a session, or reopen a session below it.<br>BonBon keeps recording while you’re away.</p>
       <div class="welcome-notes"><div><strong>Stay connected</strong><p>Reopen a session or share it across browser tabs.</p></div><div><strong>Keep the history</strong><p>Return to recorded output even after a process ends.</p></div></div>
     </section>
     <section id="session-view" hidden>
-      <div class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
+      <section id="preparation" aria-label="Prepare session" hidden>
+        <form id="launch-form">
+          <div class="preparation-heading"><div><span class="eyebrow">PROJECT DRAFT</span><h2>Prepare a session.</h2></div><span id="launch-saved" role="status"></span></div>
+          <div class="launch-grid">
+            <label>Session name<input id="launch-name" maxlength="200" placeholder="What are you working on?"></label>
+            <label>Tool<select id="launch-tool"></select></label>
+            <label class="checkbox wide"><input id="launch-worktree" type="checkbox">Use worktree</label>
+            <div id="worktree-options" class="wide launch-grid" hidden>
+              <label>Starting branch or commit<input id="launch-base" placeholder="HEAD" maxlength="250"></label>
+              <label>New branch <span class="optional">optional</span><input id="launch-branch" placeholder="Generated automatically" maxlength="250"></label>
+            </div>
+          </div>
+          <p id="launch-repository" class="form-help"></p>
+          <p id="launch-error" class="form-error" role="alert" hidden></p>
+          <div class="launch-actions"><p class="form-help">Your draft stays with this project until you start. Shell starts without a preset command.</p><button id="launch-submit" class="primary" type="submit">Start session ↗</button></div>
+        </form>
+      </section>
+      <div id="terminal-heading" class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
       <div id="terminal" aria-label="Session terminal"></div>
-      <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span><button id="composer-toggle" aria-expanded="false" aria-controls="composer" disabled>Message editor</button></div>
-      <section id="composer" aria-label="Message editor" hidden>
+      <div id="terminal-footer" class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span><button id="composer-toggle" aria-expanded="true" aria-controls="composer" disabled>Hide editor</button></div>
+      <section id="composer" aria-label="Message editor">
         <label for="composer-text">Compose a message</label>
-        <textarea id="composer-text" rows="4" placeholder="Write and edit here, then submit to the terminal…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
+        <textarea id="composer-text" rows="4" placeholder="Write your request. Start the session when you’re ready…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
         <div id="composer-files" aria-label="Attached files"></div>
-        <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Submit ↵</button></div>
-        <p id="composer-help">Enter adds a line. Submit pastes into the current terminal prompt and presses Enter. You can still type directly in the terminal. Paste or drop files here to send local file references.</p>
+        <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Send ↵</button></div>
+        <p id="composer-help">Enter adds a line. Send pastes into the current terminal prompt and presses Enter. You can still type directly in the terminal. Paste or drop files here to send local file references.</p>
       </section>
     </section>
+    <section id="settings-view" aria-label="Settings" hidden>
+      <div class="settings-heading"><div><span class="eyebrow">MAKE IT YOURS</span><h2>Settings</h2><p>Defaults for new sessions in this BonBon instance.</p></div><button id="settings-close">Back to session</button></div>
+      <form id="settings-form">
+        <section class="settings-card"><h3>Session defaults</h3>
+          <label>Default tool<select id="settings-tool"></select></label>
+          <label class="checkbox"><input id="settings-worktree" type="checkbox">Use worktree for new Git sessions</label>
+          <label>Default starting branch or commit<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
+          <p class="form-help">HEAD uses the project’s current commit. Uncommitted changes are not copied. Existing sessions keep their choices.</p>
+        </section>
+        <section class="settings-card"><div class="settings-heading"><div><h3>Tools</h3><p>A name and the first command submitted to your shell.</p></div><button id="tool-add" type="button">＋ Add tool</button></div>
+          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers.</p>
+          <div id="settings-tools"></div>
+        </section>
+        <p id="settings-error" class="form-error" role="alert" hidden></p>
+        <div class="settings-save"><span id="settings-status" role="status"></span><button id="settings-submit" class="primary" type="submit">Save settings</button></div>
+      </form>
+    </section>
   </main>
-  <dialog id="launch-dialog" aria-labelledby="launch-title">
-    <form id="launch-form">
-      <div class="dialog-heading"><div><span class="eyebrow">A FRESH START</span><h2 id="launch-title">New session</h2></div><button type="button" id="cancel-launch" class="text-button" aria-label="Close new session">✕</button></div>
-      <label>Session title <span class="optional">optional</span><input id="launch-name" placeholder="What are you working on?" maxlength="200"></label>
-      <label>Project<select id="launch-project"></select></label>
-      <label id="launch-folder">Workspace<input id="launch-workspace" placeholder="~/projects/my-project or /absolute/path" required></label>
-      <p class="form-help">Opens an interactive shell in this workspace. Run Codex or any other command from there.</p>
-      <p id="launch-error" class="form-error" role="alert" hidden></p>
-      <button id="launch-submit" class="primary" type="submit">Start session</button>
-    </form>
-  </dialog>
   <dialog id="project-dialog" aria-labelledby="project-title">
     <form id="project-form">
       <div class="dialog-heading"><h2 id="project-title">Add project</h2><button type="button" id="cancel-project" class="text-button" aria-label="Close project">✕</button></div>
       <label>Project name <span id="project-name-hint" class="optional">defaults to folder name</span><input id="project-name" maxlength="200" placeholder="My project"></label>
       <label id="project-folder">Folder<input id="project-workspace" placeholder="~/projects/my-project" required></label>
-      <p class="form-help">Save a folder to start new sessions there with one click. Any existing folder works; Git is optional.</p>
+      <p class="form-help">Save a folder to prepare new sessions there. Any existing folder works; Git is optional.</p>
       <p id="project-remove-help" class="form-help" hidden>Removing a project moves its sessions to Standalone. Their history, running processes, and files are preserved.</p>
       <p id="project-error" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="project-remove" type="button" class="danger" hidden>Remove project</button><button id="project-submit" type="submit" class="primary">Add project</button></div>

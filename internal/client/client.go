@@ -35,11 +35,22 @@ func (t Target) open() (*protocol.Conn, protocol.ServerInfo, error) {
 	if err != nil {
 		return nil, info, fmt.Errorf("read BonBon instance %s (run bonbon --dir %q server start first): %w", directory, directory, err)
 	}
+	saved.DataDir = directory
+	return openServer(saved)
+}
+
+// openServer verifies the peer on the connection that will carry the operation.
+// A menu retains its parent's verified descriptor, independently of server.json.
+func openServer(saved protocol.ServerInfo) (*protocol.Conn, protocol.ServerInfo, error) {
+	var info protocol.ServerInfo
+	if saved.Instance == "" || saved.Protocol == "" || !filepath.IsAbs(saved.DataDir) || saved.Port < 1 || saved.Port > 65535 {
+		return nil, info, fmt.Errorf("%w: incomplete server identity", ErrServerVerification)
+	}
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(saved.Port))
 	dialer := websocket.Dialer{HandshakeTimeout: time.Second}
 	conn, _, err := dialer.Dial("ws://"+address+protocol.Path, nil)
 	if err != nil {
-		return nil, info, fmt.Errorf("connect to BonBon in %s: %w", directory, err)
+		return nil, info, fmt.Errorf("connect to BonBon in %s: %w", saved.DataDir, err)
 	}
 	wire := protocol.Wrap(conn)
 	wire.SetReadDeadline(time.Now().Add(time.Second))
@@ -47,8 +58,8 @@ func (t Target) open() (*protocol.Conn, protocol.ServerInfo, error) {
 	if err == nil {
 		if reply.Type != "server" || reply.Server == nil || reply.Server.Protocol == "" {
 			err = fmt.Errorf("%w: invalid BonBon server greeting", ErrServerVerification)
-		} else if reply.Server.DataDir != directory || reply.Server.Instance != saved.Instance || reply.Server.Port != saved.Port || reply.Server.Protocol != saved.Protocol {
-			err = fmt.Errorf("%w: server identity does not match this directory's server.json", ErrServerVerification)
+		} else if reply.Server.DataDir != saved.DataDir || reply.Server.Instance != saved.Instance || reply.Server.Port != saved.Port || reply.Server.Protocol != saved.Protocol || reply.Server.PID != saved.PID {
+			err = fmt.Errorf("%w: server identity does not match the expected instance", ErrServerVerification)
 		} else {
 			info = *reply.Server
 		}
@@ -96,28 +107,28 @@ func (t Target) openCurrent() (*protocol.Conn, protocol.ServerInfo, error) {
 // Shutdown does not depend on session protocol compatibility. Verify and send on
 // the same connection, without retrying or signalling a PID from server.json.
 func (t Target) Stop() error {
-	return t.stop("")
-}
-
-// StopInstance binds a companion's Quit action to the server that launched it.
-func (t Target) StopInstance(instance string) error {
-	if instance == "" {
-		return errors.New("missing server instance")
-	}
-	return t.stop(instance)
-}
-
-func (t Target) stop(expected string) error {
 	conn, info, err := t.open()
 	if err != nil {
 		return fmt.Errorf("refusing to stop an unverified server: %w", err)
 	}
-	defer conn.Close()
-	if expected != "" && info.Instance != expected {
-		return fmt.Errorf("%w: menu bar belongs to a different server instance", ErrServerVerification)
+	return stop(conn, info)
+}
+
+// StopInstance binds a companion's Quit action to the server that launched it.
+// expected must be the identity verified when the companion started. Reconnect
+// directly, so missing or replaced connection files cannot strand the menu.
+func StopInstance(expected protocol.ServerInfo) error {
+	conn, info, err := openServer(expected)
+	if err != nil {
+		return fmt.Errorf("refusing to stop an unverified server: %w", err)
 	}
+	return stop(conn, info)
+}
+
+func stop(conn *protocol.Conn, info protocol.ServerInfo) error {
+	defer conn.Close()
 	request := protocol.Request{Protocol: info.Protocol, Operation: "stop", Instance: info.Instance}
-	if err = conn.Send(protocol.Message{Type: "request", Request: &request}); err != nil {
+	if err := conn.Send(protocol.Message{Type: "request", Request: &request}); err != nil {
 		return err
 	}
 	result, err := receiveResult(conn)

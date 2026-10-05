@@ -51,3 +51,36 @@ func Remove(directory string) error {
 	}
 	return err
 }
+
+// RemoveOwned leaves a replacement server's descriptor intact during shutdown.
+// The root keeps inspection and removal in the same directory if it is renamed.
+// The caller still holds its server lock.
+func RemoveOwned(owner protocol.ServerInfo) error {
+	root, err := os.OpenRoot(owner.DataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	data, err := root.ReadFile("server.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var saved protocol.ServerInfo
+	if err = json.Unmarshal(data, &saved); err != nil {
+		return err
+	}
+	if owner.Instance == "" || saved.Instance != owner.Instance {
+		return nil
+	}
+	err = root.Remove("server.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}

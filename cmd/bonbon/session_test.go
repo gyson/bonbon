@@ -171,9 +171,7 @@ func openSessionView(t *testing.T, request protocol.Request) *sessionView {
 
 func newShell(t *testing.T, workspace, title string) *sessionView {
 	t.Helper()
-	c := openSessionView(t, protocol.Request{Operation: "session-new", Run: &protocol.Run{
-		Workspace: workspace, Title: title, Size: protocol.Size{Rows: 24, Cols: 80},
-	}})
+	c := openSessionView(t, shellStartRequest(t, workspace, title, protocol.Size{Rows: 24, Cols: 80}))
 	waitFor(t, func() bool { return strings.Contains(c.text(), "BONBON_SHELL_PROMPT> ") })
 	return c
 }
@@ -363,13 +361,11 @@ func TestShellAgentCanReadCurrentHistory(t *testing.T) {
 	}
 }
 
-func TestMissingShellDoesNotCreateSession(t *testing.T) {
+func TestMissingShellKeepsProjectDraft(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("SHELL", "bonbon-nonexistent-fixture")
 	startTestServer(t, directory)
-	c := openSessionView(t, protocol.Request{Operation: "session-new", Run: &protocol.Run{
-		Workspace: t.TempDir(), Size: protocol.Size{Rows: 24, Cols: 80},
-	}})
+	c := openSessionView(t, shellStartRequest(t, t.TempDir(), "", protocol.Size{Rows: 24, Cols: 80}))
 	select {
 	case m := <-c.done:
 		if m.Type != "error" || !strings.Contains(m.Error, "bonbon-nonexistent-fixture") {

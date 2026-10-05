@@ -1,15 +1,8 @@
 // The browser uses the same one-request-per-connection protocol as the Go CLI.
-export const VERSION = 'bonbon/12';
+export const VERSION = 'bonbon/14';
 
 // These types mirror internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
-
-export interface Run {
-  projectId?: string;
-  workspace?: string;
-  title: string;
-  size: Size;
-}
 
 export interface ServerInfo {
   protocol: string;
@@ -20,9 +13,18 @@ export interface ServerInfo {
   executable: string;
 }
 
-export interface Project { id: string; name: string; workspace: string; created: string }
+export interface Project { id: string; name: string; workspace: string; created: string; draftId?: string }
+
+export interface Tool { id: string; name: string; command: string }
+export interface Settings { revision: number; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
+export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
+export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
+export interface PreparedSession { id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: { status: string } }
+export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
 export interface SessionInfo {
+  preparation?: Preparation;
+  worktree?: Worktree;
   projectId: string;
   id: string;
   title: string;
@@ -49,9 +51,14 @@ type ProjectListRequest = { operation: 'project-list' };
 type ProjectAddRequest = { operation: 'project-add'; name: string; workspace: string };
 type RenameRequest = { operation: 'project-rename'; project: string; name: string } | { operation: 'session-rename'; session: string; name: string };
 type ProjectRemoveRequest = { operation: 'project-remove'; project: string };
-type RPCRequest = ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type SettingsRequest = { operation: 'settings-get' } | { operation: 'settings-save'; settings: Settings };
+type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
+type PrepareRequest = { operation: 'project-draft'; project: string };
+type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
+type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
+type RPCRequest = SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
-  | { operation: 'session-new'; run: Run }
+  | { operation: 'session-start'; session: string; revision: number; size: Size }
   | { operation: 'session-resume'; session: string; size: Size };
 export type Request = RPCRequest | StreamRequest;
 
@@ -231,6 +238,10 @@ export class Peer {
   }
 }
 
+export function call(server: ServerInfo, request: SettingsRequest): Promise<Settings>;
+export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
+export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;
+export function call(server: ServerInfo, request: RemoveWorktreeRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: ProjectListRequest): Promise<Project[]>;
 export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;

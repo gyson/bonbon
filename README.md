@@ -102,7 +102,8 @@ The menu is a separate process launched from the same `bonbon` executable. No `.
 bundle, Swift build, or extra runtime is needed. `gogpu/systray` provides the native
 menu, and deployment builds still use `CGO_ENABLED=0`. The server's lifetime pipe
 closes the menu after shutdown and also when the server crashes. A repeated start
-keeps the existing server and menu; restart replaces both.
+keeps the existing server and menu; restart replaces both. Quit remembers and verifies
+its original server connection, even if `server.json` is missing or replaced.
 
 Use `server start --no-menubar` or `server restart --no-menubar` for a headless Mac
 or automated checks. Linux starts no menu. A repeated start does not change an
@@ -130,18 +131,17 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the server.
 After rebuilding, use `server restart` to serve the new embedded assets; restart stops
 active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/12`. `server restart` can replace a server using a
+This change uses protocol `bonbon/14`. `server restart` can replace a server using a
 different session protocol when it supports the same verified shutdown request.
-UI and query commands still require the current protocol. SQLite now uses format 4
-for projects. Older formats are rejected; use a fresh `--dir` instead of restarting this build against an older archive.
+UI and query commands still require the current protocol. SQLite now uses format 5
+for settings, preparations, and managed worktrees. Older formats are rejected; use a fresh `--dir` instead of restarting this build against an older archive.
 
 The sidebar groups the 100 most recently active sessions under saved projects, newest
 terminal activity first. Input, output, and run state changes affect order; opening a
 view, resizing it, renaming a session, and saving drafts do not. Use
 **Add project** to save an existing folder, with an optional name that defaults to its
-basename. Git is optional. Click **＋** beside any project to open a new shell there
-immediately. Use **⋯** to rename or remove a custom project. Removing a project moves
-its sessions to **Standalone** and keeps their history, files, and processes.
+basename. Git is optional. Click **＋** beside a project to open its saved draft. Starting it adds a session beneath that project; **＋** then opens a fresh draft. Project names are plain text; use the small arrow to expand or collapse sessions. Use **⋯** to rename or remove a custom project. Removing a project moves
+its sessions and unfinished draft to **Standalone** and keeps their history, files, and processes.
 **Rename** in a session's toolbar changes its title.
 
 **General** is always available for work across projects. Its working folder is
@@ -149,22 +149,47 @@ its sessions to **Standalone** and keeps their history, files, and processes.
 projects persist in SQLite across browser tabs and server restarts. The same canonical
 folder cannot be saved twice. Multiple sessions can still share a folder.
 
-**New session** lets you choose a saved project, or **Another folder (standalone)**
-for one-off work. Folder paths accept an absolute path or `~/project` (`~` alone
-selects the server's home directory). BonBon expands this using the server's `HOME`
-from startup and records the canonical absolute path. Other relative paths, `~user`,
-and environment-variable expansion are unsupported. Every session opens the server's
-`$SHELL -i`, falling back to `/bin/sh -i`. Run agent commands inside that shell.
+Every new session starts from a saved project, including **General**. The project
+keeps one unfinished draft across tabs, project switches, and server restarts. Edit the
+session name, choose a tool or **Shell**, and optionally enable a worktree. The project
+and folder are fixed, and startup commands are edited only in **Settings**. Starting
+keeps the message and attachments in the session editor until you send them.
+
+Project folders accept an absolute path or `~/project` (`~` alone selects the server's
+home directory). BonBon expands this using the server's `HOME` from startup and records
+the canonical absolute path. Other relative paths, `~user`, and environment-variable
+expansion are unsupported. Every session opens the server's `$SHELL -i`, falling back
+to `/bin/sh -i`. Shell submits no preset command; type any command in the terminal.
 
 Browser launches use the server's environment from startup, with `TERM=xterm-256color`.
 Restart the server from the desired shell after changing PATH or environment settings.
 The shell reads its normal startup files. Commands keep their own arguments,
-authentication, configuration, and permissions; BonBon injects no provider flags or
-prompts. Exiting an agent returns to the shell. Exiting the shell ends the session.
+authentication, configuration, and permissions. BonBon submits the configured startup
+command once, while the message editor waits for an explicit Send. Exiting an agent returns to the shell. Exiting the shell ends the session.
 
 Multiple sessions can use the same or overlapping workspace. Their terminals and
 histories are independent, but files are shared; BonBon does not coordinate edits.
-Optional managed Git worktrees are planned in [PLAN.md](docs/PLAN.md).
+Enable **Use worktree** to create independent files under
+`<instance>/worktrees/YYYYMMDD-HHMMSS-XXXXXXXX`. Choose a starting branch or commit
+(default HEAD) and optionally name the new branch. Only committed files are included;
+local changes, ignored files, and dependencies are not copied. Git must be installed.
+Submodules are not supported. Worktree files are outside the SQLite archive.
+
+**Settings** configures defaults for new sessions and named startup commands, for example
+**Codex** → `codex` and **Codex 6 Astra** → `codex --model=gpt-6-astra`. Commands use the shell's syntax;
+BonBon does not validate model names or install the tools. Shell is always available.
+Commands must be a single line, at most 1,000 bytes. Edit commands in Settings or
+choose Shell and type directly in the terminal. Changing defaults does not change
+existing drafts.
+
+New sessions save their launch settings, message drafts, and attachments before running
+anything. **Start session** opens the terminal above the editor and submits only the
+startup command. **Send** explicitly pastes your composed message. Reopening never
+repeats a startup command. Conflicting edits in another browser are reported.
+
+**Remove worktree** is explicit. It refuses active sessions and modified, untracked,
+or ignored files, keeps the branch, and preserves history. Stopping a session or removing
+a project does not remove its worktree. Repositories must remain available for Git cleanup.
 
 The terminal supports keyboard input, paste, resizing, and the agent's own prompts.
 Switching sessions or closing a tab removes that view and leaves the process running.

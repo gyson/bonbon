@@ -161,27 +161,8 @@ func (r *runningSession) finish(code int, err error) {
 	}
 }
 
-func (s *Server) newSession(ctx context.Context, conn *protocol.Conn, request *protocol.Run) {
-	run, err := s.prepareProjectRun(request)
-	if err != nil {
-		s.reply(conn, nil, err)
-		return
-	}
-	workspace, err := agent.Canonical(run.Workspace)
-	if err != nil {
-		s.reply(conn, nil, err)
-		return
-	}
-	if run.Title == "" {
-		run.Title = filepath.Base(run.Shell) + " · " + filepath.Base(workspace)
-	}
+func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch) func() {
 	s.mu.Lock()
-	session, err := s.store.CreateSession(run.Title, workspace, run.ProjectID)
-	if err != nil {
-		s.mu.Unlock()
-		s.reply(conn, nil, err)
-		return
-	}
 	runContext, cancel := context.WithCancel(ctx)
 	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1}
 	s.sessions[session.ID] = r
@@ -200,7 +181,7 @@ func (s *Server) newSession(ctx context.Context, conn *protocol.Conn, request *p
 			close(r.done)
 		}()
 	}
-	s.attach(conn, r, run.Size, launch)
+	return func() { s.attach(conn, r, run.Size, launch) }
 }
 
 // Session launches always use the server environment and interactive shell.
@@ -209,6 +190,9 @@ func prepareRun(request *protocol.Run) (*agent.Launch, error) {
 		return nil, errors.New("invalid new session request")
 	}
 	run := agent.Launch{Run: *request}
+	if err := history.ValidateCommand(run.Command); err != nil {
+		return nil, err
+	}
 	workspace, err := expandWorkspace(run.Workspace)
 	if err != nil {
 		return nil, err
@@ -427,7 +411,10 @@ func (s *Server) listSessions(limit int) ([]protocol.SessionInfo, error) {
 	}
 	result := make([]protocol.SessionInfo, 0, len(sessions))
 	for _, session := range sessions {
-		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended"}
+		info := protocol.SessionInfo{ID: session.ID, ProjectID: session.ProjectID, Title: session.Title, Workspace: session.Workspace, Updated: session.Updated, Status: "ended", Preparation: session.Preparation, Worktree: session.Worktree}
+		if session.Preparation != nil {
+			info.Status = session.Preparation.State
+		}
 		if session.Run != nil {
 			info.Status = session.Run.Status
 		}

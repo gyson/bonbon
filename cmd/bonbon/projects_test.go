@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"bonbon/internal/client"
 	"bonbon/internal/history"
@@ -43,7 +42,7 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 	var views []*sessionView
 	var customID string
 	for _, project := range []history.Project{general, custom} {
-		view := openSessionView(t, protocol.Request{Operation: "session-new", Run: &protocol.Run{ProjectID: project.ID, Title: project.Name, Size: protocol.Size{Rows: 24, Cols: 80}}})
+		view := openSessionView(t, projectStartRequest(t, project.ID, project.Name, protocol.Size{Rows: 24, Cols: 80}))
 		views = append(views, view)
 		waitFor(t, func() bool { return strings.Contains(view.text(), "BONBON_SHELL_PROMPT> ") })
 		var info protocol.SessionInfo
@@ -97,14 +96,8 @@ func TestProjectsLaunchAndRemovalThroughServer(t *testing.T) {
 	}
 	waitFor(t, func() bool { return strings.Contains(views[1].text(), "still-working") })
 	// Session creation for the removed project must fail without leaving a new record.
-	removed := openSessionView(t, protocol.Request{Operation: "session-new", Run: &protocol.Run{ProjectID: custom.ID, Size: protocol.Size{Rows: 24, Cols: 80}}})
-	select {
-	case result := <-removed.done:
-		if result.Type != "error" {
-			t.Fatalf("removed project started: %+v", result)
-		}
-	case <-time.After(8 * time.Second):
-		t.Fatal("removed project launch did not fail")
+	if _, err := target.Call(protocol.Request{Operation: "project-draft", Project: custom.ID}); err == nil {
+		t.Fatal("removed project prepared a draft")
 	}
 	var replacement history.Project
 	rpc(protocol.Request{Operation: "project-add", Workspace: custom.Workspace}, &replacement)
