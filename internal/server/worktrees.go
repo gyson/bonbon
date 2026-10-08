@@ -238,7 +238,8 @@ func (s *Server) removeWorktree(ctx context.Context, id string) error {
 	if dirty != "" {
 		return errors.New("worktree contains modified, untracked, or ignored files; preserve or remove them before removing the worktree")
 	}
-	// No force: Git also protects locks and initialized submodules. Keep branches.
+	// Do not force removal. Git also protects locks and initialized submodules. Keep
+	// branches.
 	if _, err = git(ctx, w.Repository, "worktree", "remove", "--", w.Path); err != nil {
 		return err
 	}

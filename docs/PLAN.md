@@ -1,8 +1,8 @@
 # BonBon plans
 
-This file tracks planned work that remains to be done. In the same commit as an
-implementation, remove completed items or revise partially completed items to describe
-only the remaining work. Document implemented behavior in [SPEC.md](SPEC.md).
+This file lists planned work. In each implementation commit, remove completed items. For
+partially completed items, describe only the remaining work. Document implemented
+behavior in [SPEC.md](SPEC.md).
 
 BonBon is in daily use. Future storage changes must include embedded migrations and
 tests that preserve existing databases. Keep the full supported upgrade chain so users
@@ -10,49 +10,51 @@ can skip releases. See [SPEC.md](SPEC.md#database-upgrades) for current support.
 
 ## Richer web workspace
 
-The terminal web client is implemented; see [SPEC.md](SPEC.md#web-client). The
-following additions remain planned. Keep them on the shared WebSocket protocol and
-server services. Do not add a separate browser session store or database writer.
+The terminal web client is implemented. See [SPEC.md](SPEC.md#web-client). The following
+additions remain planned. Keep them on the shared WebSocket protocol and server
+services. Do not add a separate browser session store or database writer.
 
 - Add periodic emulator checkpoints for faster reconstruction after a server crash.
-  Normal completion already saves a final display; live reconnect uses in-memory state.
+  Normal completion already saves a final display. Live reconnect uses state in memory.
   Keep original events authoritative and verify checkpoint/reconstruction boundaries.
 - Extend terminal compatibility checks for graphics, extended keyboard protocols and
   soft-wrap copy semantics. Test the actual agent CLI versions before claiming support.
-- Add history search and pagination. Label derived
-  terminal text clearly; terminal chunks are not exact chat messages.
-- Add read-only code diff and file views for the selected workspace. File access
-  belongs in the core, scoped to that workspace.
+- Add history search and pagination. Label derived terminal text clearly. Terminal
+  chunks are not exact chat messages.
+- Add read-only code diff and file views for the selected workspace. File access belongs
+  in the core, scoped to that workspace.
 - Add verified agent-specific attachment delivery where plain file references are
   insufficient. Add imports and session forks when their core operations exist.
-- Validate daily use with real agent CLIs in the browser. Synthetic terminal checks
-  do not establish agent compatibility.
-- Add a desktop shell and global shortcut after the web workflow is useful. The
-  minimal macOS menu bar is implemented; see [SPEC.md](SPEC.md#macos-menu-bar).
+- Validate daily use with real agent CLIs in the browser. Synthetic terminal checks do
+  not establish agent compatibility.
+- Add a desktop shell and global shortcut after the web workflow is useful. The minimal
+  macOS menu bar is implemented. See [SPEC.md](SPEC.md#macos-menu-bar).
 
 See [GOAL.md](GOAL.md#future-workspace-interface) for the intended workspace experience.
-Keep the deployed Go server self-contained. Browser launches start from a saved project and use the server
-environment for the shell. Saved projects and General are implemented; see [SPEC.md](SPEC.md#projects-and-launches).
+Keep the deployed Go server self-contained. Browser launches start from a saved project
+and use the server environment for the shell. Saved projects and General are
+implemented. See [SPEC.md](SPEC.md#projects-and-launches).
 
 ### Acceptance checks for future additions
 
 - Preserve history and draft durability as the workspace grows.
 - Keep recorded text and file previews from executing as page content.
 - Check diff and file views against the selected workspace, including symlinks.
-- Preserve shared views, single-controller input, and recording behavior. Reconnection must
-  not replay input or infer that an uncertain send was never delivered.
+- Preserve shared views, single-controller input, and recording behavior. Reconnection
+  must not replay input. It must not treat uncertain delivery as proof that a send
+  failed.
 - Verify development use does not modify production data.
 
 ## Custom context
 
-Status: deferred. Design a complete feature for adding, editing, and applying custom
-context to projects and sessions, including General. The scope and interface remain
-undecided; no context insertion or automatic delivery is implemented.
+Status: deferred. Design a complete feature to add, edit, and apply custom context to
+projects and sessions, including General. The scope and interface remain undecided.
+BonBon does not insert context or deliver it automatically.
 
-- Treat guidance for searching other sessions with `bonbon query` as one use case
-  within this feature, rather than a separate history-search button.
-- Keep saved context in SQLite. Make the selected context and its scope visible to
-  the user before applying it.
+- Include guidance for searches across sessions with `bonbon query` in this feature. Do
+  not add a separate history-search button.
+- Keep saved context in SQLite. Make the selected context and its scope visible to the
+  user before applying it.
 - Verify delivery through each agent's supported interfaces. Do not type instructions
   into an ordinary shell or infer prompt readiness from terminal output.
 - Preserve the user's current request and distinguish retrieved history from current
@@ -60,13 +62,13 @@ undecided; no context insertion or automatic delivery is implemented.
 
 ## Agent activity indicators
 
-Status: deferred. Use automatic, tool-independent activity detection. Do not build
-this around Codex or another specific agent.
+Status: deferred. Use automatic, tool-independent activity detection. Do not build this
+around Codex or another specific agent.
 
 - Show **Output active** or **Quiet** based on terminal output. Quiet means no recent
-  output; it does not mean the agent finished or is ready for another prompt.
-- Keep activity separate from session lifecycle (`running`, `stopped`, and other
-  process states) and view ownership (`Viewing` or `Controlling`).
+  output. It does not mean the agent finished or is ready for another prompt.
+- Keep activity separate from session lifecycle (`running`, `stopped`, and other process
+  states) and view ownership (`Viewing` or `Controlling`).
 - Compute activity in the server and expose it through the shared protocol to browser
   views, including session lists and reconnects. Keep tracking without clients.
 - Choose and test timing thresholds to avoid flicker. Treat spinners and background
@@ -75,8 +77,8 @@ this around Codex or another specific agent.
 
 ## Worktree follow-ups
 
-Settings, tool command presets, session preparation, and managed worktrees are implemented;
-see [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees).
+Settings, tool command presets, session preparation, and managed worktrees are
+implemented. See [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees).
 
 - Add optional copying of selected uncommitted changes only after defining exclusions,
   partial failure recovery, and a stable source snapshot.
@@ -84,12 +86,14 @@ see [SPEC.md](SPEC.md#session-preparation-settings-and-worktrees).
   repositories. Do not infer these capabilities from ordinary checkout fixtures.
 - Consider moving an existing session to another workspace separately from creating a
   new session. An active shell cannot be moved by changing its recorded path.
-- Add project-specific defaults if daily use needs them. Current defaults are per instance.
+- Add project-specific defaults if daily use needs them. Current defaults are per
+  instance.
 
 ## Fork a session from an earlier point
 
-Status: future possibility; not implemented. Add conversation branching to the UI. Let the user select a point in the middle
-of an existing session and continue in a new session from there.
+Status: future possibility. This feature is not implemented. Add conversation branching
+to the UI. Let the user select a point in the middle of an existing session. Continue
+from that point in a new session.
 
 For example, fork after an earlier design discussion to try another approach without
 including the later implementation discussion. The original session remains available
@@ -97,25 +101,25 @@ and can continue independently.
 
 ### Expected behavior
 
-- Give the fork its own BonBon session ID. Store its parent and fixed history cutoff
-  in SQLite, with stable references to the original evidence.
-- Inherit history through the selected point. Later parent messages and sibling
-  branches must not enter the fork's inherited view, even if the parent continues.
-- Apply the cutoff consistently to future session-aware reads, search, attachments,
-  and context preparation. General-purpose `bonbon query` still uses explicit SQL scope.
-- Keep conversation branching separate from file state. Forking history does not
-  restore old workspace files or create a worktree automatically.
+- Give the fork its own BonBon session ID. Store its parent and fixed history cutoff in
+  SQLite, with stable references to the original evidence.
+- Inherit history through the selected point. Later parent messages and sibling branches
+  must not enter the fork's inherited view, even if the parent continues.
+- Apply the cutoff consistently to future session-aware reads, search, attachments, and
+  context preparation. General-purpose `bonbon query` still uses explicit SQL scope.
+- Keep conversation branching separate from file state. Forking history does not restore
+  old workspace files or create a worktree automatically.
 - Continue through a verified native agent capability or a fresh agent with access to
   the inherited history. Never replay recorded keystrokes or claim to restore hidden
   agent state from a terminal recording.
 
-Point selection remains undecided. Current terminal events are chunks,
-not reliable message or turn boundaries; define how to select and explain the cutoff
-before implementing the UI. Keep fork creation in the server.
+Point selection remains undecided. Current terminal events are chunks. They do not
+reliably identify message or turn boundaries. Before you implement the UI, define how to
+select and explain the cutoff. Keep fork creation in the server.
 
-Validate that inherited history stays fixed after parent activity and server restart,
-that later parent and sibling records are excluded, and that forking changes no files
-or starts an agent without an explicit launch request.
+Verify that inherited history stays fixed after parent activity and server restart.
+Verify that it excludes later parent and sibling records. Verify that a fork changes no
+files. Verify that it starts no agent without an explicit launch request.
 
 ## Cloud backup for SQLite
 
@@ -126,26 +130,28 @@ workflow is outside this plan.
 
 ### Storage boundary
 
-All durable BonBon data belongs in SQLite. Today that means sessions, runs, original
-terminal input/output, command and workspace metadata, resize events, interruption notices,
-draft revisions, attachment bytes and metadata, and derived searchable text. Keep future
-imports, fork boundaries, memory, and settings in the database too.
+All durable BonBon data belongs in SQLite. This includes sessions, runs, original
+terminal input and output, and command and workspace metadata. It also includes resize
+events, interruption notices, draft revisions, attachment bytes and metadata, and
+derived searchable text. Keep future imports, fork boundaries, memory, and settings in
+the database too.
 
-Production defaults to `~/.bonbon/history.sqlite`; development defaults to
+Production defaults to `~/.bonbon/history.sqlite`. Development defaults to
 `~/.bonbon-dev/history.sqlite`. SQLite's WAL can contain committed data that is not yet
-in the main file. Replication must account for this; periodically copying only the main
-file is insufficient. Server logs, `server.json`, process locks, and rebuildable caches
-are not history and must not be restored as live connection state.
-Workspace files (including General), provider-managed credentials, and running processes are outside the
-backup scope.
+in the main file. Replication must include this data.
+
+Periodic copies of only the main file are insufficient. Server logs, `server.json`,
+process locks, and rebuildable caches are not history and must not be restored as live
+connection state. Workspace files (including General), provider-managed credentials, and
+running processes are outside the backup scope.
 
 ### Candidate approach
 
 Evaluate [Litestream](https://github.com/benbjohnson/litestream), or a similar tool.
 Litestream documents a separate background process that continuously replicates SQLite
-changes to cloud storage. This suggests an optional companion process while BonBon
-keeps a non-CGO SQLite driver and builds with `CGO_ENABLED=0`.
-See the [official overview](https://litestream.io/) and
+changes to cloud storage. This suggests an optional companion process while BonBon keeps
+a non-CGO SQLite driver and builds with `CGO_ENABLED=0`. See the
+[official overview](https://litestream.io/) and
 [cloud storage guides](https://litestream.io/guides/).
 
 This is a proposed integration, not a dependency decision. Pin and verify a version
@@ -166,19 +172,23 @@ BonBon sessions or turn disaster recovery into multi-machine database synchroniz
    installation, database, and development/production environment. Local file replicas
    are not the product backup feature.
 3. **Add explicit configuration and lifecycle.** Keep cloud replication disabled by
-   default. Store durable BonBon settings in SQLite; use environment variables or an OS
+   default. Store durable BonBon settings in SQLite. Use environment variables or an OS
    credential store for cloud secrets. Define retention and encryption requirements.
-   Recording must continue when cloud access fails. Report replication errors, lag, and
-   the latest confirmed recovery point; a local commit is not proof of a cloud backup.
-4. **Add cloud recovery.** Recover into a new data directory while its server is stopped.
-   Validate database integrity, references, and format before opening it. Preserve IDs,
-   timestamps, original bytes, and history boundaries. Mark previously active runs as
-   interrupted and report missing workspace paths. Do not overwrite active data, launch
-   agents, or replay recorded input. Apply supported embedded migrations to the recovered
-   database. Reject unknown or newer formats without changing their contents.
+
+Recording must continue when cloud access fails. Report replication errors, lag, and the
+latest confirmed recovery point. A local commit does not prove that a cloud backup
+exists.
+4. **Add cloud recovery.** Recover into a new data directory while its server is
+   stopped. Validate database integrity, references, and format before opening it.
+   Preserve IDs, timestamps, original bytes, and history boundaries. Mark previously
+   active runs as interrupted and report missing workspace paths.
+
+Do not overwrite active data, launch agents, or replay recorded input. Apply supported
+embedded migrations to the recovered database. Reject unknown or newer formats without
+changing their contents.
 5. **Document and expose the verified workflow.** Choose BonBon commands only after the
-   lifecycle and recovery checks work. Update the command reference and current spec
-   with actual behavior, recovery limits, and operational requirements.
+   lifecycle and recovery checks work. Update the command reference and SPEC.md with
+   actual behavior, recovery limits, and operational requirements.
 
 ### Acceptance checks
 

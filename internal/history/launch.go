@@ -23,8 +23,8 @@ type Settings struct {
 	Tools       []Tool `json:"tools"`
 }
 
-// Preparation snapshots the selected preset. Editing a preset never rewrites a
-// prepared or launched session. State is owned by the server.
+// Preparation stores a snapshot of the selected preset. Preset changes never rewrite a
+// prepared or launched session. The server owns this state.
 type Preparation struct {
 	Revision int64  `json:"revision"`
 	State    string `json:"state"`

@@ -50,8 +50,9 @@ func serverCommand(target client.Target, args []string) error {
 	if err := os.MkdirAll(target.Dir, 0700); err != nil {
 		return err
 	}
-	// Resolve again after creation: a new directory can have symlinked parents
-	// (for example /tmp on macOS). Parent and daemon must name the same archive.
+	// Resolve the path again after directory creation. A new directory can have symlinked
+	// parents, such as /tmp on macOS. The parent and daemon must use the same archive
+	// path.
 	path, err := filepath.EvalSymlinks(target.Dir)
 	if err != nil {
 		return err
@@ -91,8 +92,8 @@ func serve(target client.Target, noMenu bool) error {
 		return fmt.Errorf("a server already owns %s: %w", target.Dir, err)
 	}
 	defer unlock()
-	// Close the companion after SQLite closes, but before releasing the archive
-	// lock. Quit waits for this pipe to close instead of waiting on that lock.
+	// After SQLite closes, close the companion before release of the archive lock. Quit
+	// waits for this pipe to close. It does not wait for the lock.
 	var menu *menuBarProcess
 	defer func() { menu.close() }()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -172,7 +173,8 @@ func startServer(target client.Target, noMenu bool) error {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	// This handle belongs to the child we just launched; never kill a saved PID.
+	// This handle belongs to the child just launched. Never kill a process from a saved
+	// PID.
 	cmd.Process.Signal(syscall.SIGTERM)
 	select {
 	case <-done:

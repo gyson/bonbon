@@ -5,7 +5,8 @@ import type { Attachment, ComposerState, Peer, ServerInfo } from './protocol.js'
 const encoder = new TextEncoder();
 const empty = (): ComposerState => ({ draft: { revision: 0, text: '', attachments: [], pending: false }, attachments: [] });
 
-// This is terminal paste, not a provider API. Do not infer readiness from output.
+// This sends terminal paste through the PTY. It does not use a provider API. Do not
+// infer readiness from output.
 export function composeInput(text: string, files: Attachment[], bracketed: boolean): string {
   if (encoder.encode(text).length > 64 * 1024) throw new Error('The message limit is 64 KiB.');
   if (!text.trim() && !files.length) throw new Error('Write a message or attach a file first.');
@@ -104,8 +105,8 @@ export class Composer {
     this.controls();
   }
 
-  // Serialize saves, carrying forward the server revision. Edits made during an
-  // in-flight save get another revision; switching waits for all of them.
+  // Serialize saves with the server revision from the previous save. Edits during an
+  // active save get another revision. Session changes wait for all saves.
   async flush(): Promise<void> {
     clearTimeout(this.timer);
     if (this.saving) {
@@ -205,7 +206,7 @@ export class Composer {
     try {
       await this.flush();
       const input = composeInput(this.state.draft.text, this.state.attachments, this.host.bracketed());
-      // Persist the uncertainty marker before any bytes can leave this browser.
+      // Save the uncertainty marker before any bytes leave this browser.
       this.state.draft.pending = true;
       this.changed();
       await this.flush();

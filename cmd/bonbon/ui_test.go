@@ -38,7 +38,7 @@ func TestUIOpensSelectedInstanceHome(t *testing.T) {
 	directory := t.TempDir()
 	port := startTestServer(t, directory)
 	url := "http://127.0.0.1:" + port + "/"
-	// The explicit instance wins over an unrelated environment selection.
+	// The explicit instance takes priority over an unrelated environment selection.
 	t.Setenv("BONBON_DIR", filepath.Join(t.TempDir(), "missing"))
 	if output, err := testCommand("--dir", directory, "ui").CombinedOutput(); err != nil || !strings.Contains(string(output), url) {
 		t.Fatalf("ui: %s %v", output, err)

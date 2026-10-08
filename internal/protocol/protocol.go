@@ -1,4 +1,4 @@
-// Package protocol defines BonBon's local client/server messages.
+// Package protocol defines messages between BonBon's local clients and server.
 package protocol
 
 import (
@@ -27,7 +27,7 @@ type Run struct {
 	Size      Size   `json:"size"`
 }
 
-// Commands and workspace identity are server-owned snapshots, not form inputs.
+// The server owns command and workspace snapshots. Forms cannot supply these fields.
 type PreparationConfig struct {
 	Revision int64  `json:"revision"`
 	ToolID   string `json:"toolId"`
@@ -57,8 +57,9 @@ type Request struct {
 	Upload      *Upload            `json:"upload,omitempty"`
 }
 
-// Drafts are editable composition state, not agent messages. Pending means that
-// an input write may have happened; clients must never retry it automatically.
+// Drafts contain editable text and attachments. They are not agent messages. Pending
+// means that an input write may have occurred. Clients must never retry it
+// automatically.
 type Draft struct {
 	Revision    int64   `json:"revision"`
 	Text        string  `json:"text"`
@@ -107,8 +108,8 @@ type ServerInfo struct {
 	Executable string `json:"executable"`
 }
 
-// Message carries one request, reply, or terminal event. Only the fields needed
-// for its Type are populated. Input bytes and rendered frames use JSON/base64.
+// Message carries one request, reply, or terminal event. Set only the fields that its
+// Type needs. Input bytes and rendered frames use base64 in JSON.
 type Message struct {
 	Type        string          `json:"type"`
 	Revision    int64           `json:"revision,omitempty"`
@@ -139,14 +140,14 @@ func Wrap(socket *websocket.Conn) *Conn {
 }
 
 func (c *Conn) Close() error {
-	// Send a best-effort close frame so browser peers see a normal close.
-	// Keep this short: slow peers must not delay recording or process cleanup.
+	// Try to send a close frame so browser peers see a normal close. Keep the timeout
+	// short. Slow peers must not delay recording or process cleanup.
 	c.socket.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(100*time.Millisecond))
 	return c.socket.Close()
 }
 
-// Deadlines belong to the underlying socket so connection shutdown can interrupt
-// Receive without concurrently calling the WebSocket reader's methods.
+// Set deadlines on the underlying socket. Then connection shutdown can interrupt
+// Receive without concurrent calls to the WebSocket reader's methods.
 func (c *Conn) SetReadDeadline(deadline time.Time) error {
 	return c.socket.NetConn().SetReadDeadline(deadline)
 }

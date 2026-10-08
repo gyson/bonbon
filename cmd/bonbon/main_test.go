@@ -42,8 +42,8 @@ func TestInstanceDirectorySelection(t *testing.T) {
 			if defaultInstanceDir() != directory {
 				t.Fatal("wrong build default")
 			}
-			// The subprocess is a development binary, so select the release directory
-			// explicitly when checking both live archives.
+			// The subprocess is a development binary. Select the release directory explicitly
+			// for checks of both live archives.
 			t.Setenv("BONBON_DIR", directory)
 			result := queryCLI(t)
 			if len(result.Rows) != 1 || result.Rows[0][0] != sessions[name] {
@@ -104,7 +104,7 @@ func TestMain(m *testing.M) {
 		fixtureAgent()
 		return
 	}
-	// Exercise the management CLI in a subprocess.
+	// Test the management CLI in a subprocess.
 	if os.Getenv("BONBON_TEST_CLI") == "1" {
 		main()
 		return

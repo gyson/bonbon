@@ -14,8 +14,8 @@ const (
 	schemaVersion       = 6
 )
 
-// Scripts are immutable once released. Add the next numbered script and raise
-// schemaVersion for each schema or durable data format change.
+// Keep released scripts unchanged. For each schema or durable data format change, add
+// the next numbered script. Increase schemaVersion.
 //
 //go:embed migrations/*.sql
 var migrations embed.FS
@@ -35,8 +35,8 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	defer conn.Close()
-	// Serialize version reads, fresh creation, and upgrades. A second opener
-	// sees the committed version and does not run the same migration again.
+	// Serialize version reads, new database creation, and upgrades. A second opener sees
+	// the committed version and skips completed migrations.
 	if _, err = conn.ExecContext(ctx, "PRAGMA busy_timeout=5000; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; BEGIN IMMEDIATE"); err != nil {
 		return fmt.Errorf("begin history migration: %w", err)
 	}

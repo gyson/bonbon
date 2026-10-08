@@ -29,7 +29,7 @@ func Update() error {
 }
 
 func updateCommand(executable string) (*exec.Cmd, error) {
-	// Update the actual executable even when it was invoked through a symlink.
+	// Update the actual executable, including when the command used a symlink.
 	executable, err := filepath.EvalSymlinks(executable)
 	if err != nil {
 		return nil, err

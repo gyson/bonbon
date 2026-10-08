@@ -15,10 +15,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Target selects one instance. Its endpoint can change on every server start.
+// Target selects one instance. Its endpoint can change at each server start.
 type Target struct{ Dir string }
 
-// ErrServerVerification requires explicit recovery, not a transport retry.
+// ErrServerVerification requires explicit recovery. Do not retry the transport.
 var ErrServerVerification = errors.New("server verification failed")
 
 func (t Target) open() (*protocol.Conn, protocol.ServerInfo, error) {
@@ -39,8 +39,8 @@ func (t Target) open() (*protocol.Conn, protocol.ServerInfo, error) {
 	return openServer(saved)
 }
 
-// openServer verifies the peer on the connection that will carry the operation.
-// A menu retains its parent's verified descriptor, independently of server.json.
+// openServer verifies the peer on the connection that will carry the operation. A menu
+// keeps its parent's verified descriptor independently of server.json.
 func openServer(saved protocol.ServerInfo) (*protocol.Conn, protocol.ServerInfo, error) {
 	var info protocol.ServerInfo
 	if saved.Instance == "" || saved.Protocol == "" || !filepath.IsAbs(saved.DataDir) || saved.Port < 1 || saved.Port > 65535 {
@@ -104,8 +104,8 @@ func (t Target) openCurrent() (*protocol.Conn, protocol.ServerInfo, error) {
 }
 
 // Stop uses the verified server's advertised version for the lifecycle request.
-// Shutdown does not depend on session protocol compatibility. Verify and send on
-// the same connection, without retrying or signalling a PID from server.json.
+// Shutdown does not depend on session protocol compatibility. Verify and send on the
+// same connection. Do not retry or signal a PID from server.json.
 func (t Target) Stop() error {
 	conn, info, err := t.open()
 	if err != nil {
@@ -114,9 +114,9 @@ func (t Target) Stop() error {
 	return stop(conn, info)
 }
 
-// StopInstance binds a companion's Quit action to the server that launched it.
+// StopInstance connects a companion's Quit action to the server that launched it.
 // expected must be the identity verified when the companion started. Reconnect
-// directly, so missing or replaced connection files cannot strand the menu.
+// directly. Missing or replaced connection files must not prevent Quit.
 func StopInstance(expected protocol.ServerInfo) error {
 	conn, info, err := openServer(expected)
 	if err != nil {

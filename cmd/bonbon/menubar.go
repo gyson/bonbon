@@ -12,9 +12,9 @@ import (
 	"bonbon/internal/client"
 )
 
-// The same executable runs the CLI, server, and menu in separate processes.
-// Normal EOF follows archive cleanup. A server crash also closes the pipe,
-// without guaranteeing cleanup. No saved PID or polled status owns the menu.
+// The same executable runs the CLI, server, and menu in separate processes. Normal EOF
+// follows archive cleanup. A server crash also closes the pipe, but cleanup is not
+// guaranteed. The menu lifetime does not depend on a saved PID or status polling.
 type menuBarProcess struct {
 	control *os.File
 	cmd     *exec.Cmd
@@ -85,8 +85,8 @@ func runMenuBarChild(target client.Target) error {
 		io.Copy(io.Discard, control)
 		close(ended)
 	}()
-	// The server launches us just before it publishes its connection information.
-	// Bind to that parent, so stale metadata cannot select another server.
+	// The server launches us just before it publishes its connection information. Use that
+	// parent's identity to prevent stale metadata from selecting another server.
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -106,7 +106,7 @@ func runMenuBarChild(target client.Target) error {
 			return runNativeMenu(ended, func() error {
 				return ui(target, nil)
 			}, func() error {
-				// Receipt only: the lifetime pipe closes after server cleanup.
+				// This confirms receipt only. The lifetime pipe closes after server cleanup.
 				if err := client.StopInstance(info); err != nil {
 					return fmt.Errorf("cannot quit BonBon: %w", err)
 				}

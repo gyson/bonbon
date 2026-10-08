@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run with sh. Keep execution in main so a truncated piped download cannot install.
+# Run with sh. Keep execution in main to prevent installation from an incomplete download.
 set -eu
 
 fail() { printf 'bonbon installer: %s\n' "$*" >&2; exit 1; }
@@ -155,12 +155,12 @@ main() {
     [ "$actual" = "$expected" ] || fail "checksum mismatch for $asset; existing installation was not changed"
     mkdir -p "$install_dir"
     staging=$(mktemp -d "$install_dir/.bonbon-install.XXXXXX")
-    # Stream only the executable, without extracting arbitrary archive paths.
+    # Extract only the executable. Do not extract arbitrary archive paths.
     tar -xzOf "$temporary/$asset" bonbon > "$staging/bonbon" || fail "invalid release archive"
     chmod 755 "$staging/bonbon"
     actual_version=$("$staging/bonbon" --version) || fail "downloaded executable cannot run on this Mac"
     [ "$actual_version" = "bonbon $selected" ] || fail "downloaded executable reports the wrong version"
-    # Rename on the same filesystem; do not truncate an executable used by a server.
+    # Rename on the same filesystem. Do not truncate an executable used by a server.
     mv -f "$staging/bonbon" "$destination"
     printf 'Installed BonBon %s at %s\n' "$selected" "$destination"
     case ":$PATH:" in

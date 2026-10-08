@@ -215,8 +215,8 @@ func TestStaleMetadataAndSymlinkDirectory(t *testing.T) {
 	if err = instance.Publish(foreign); err != nil {
 		t.Fatal(err)
 	}
-	// A free archive lock makes stale metadata disposable, even if its port is
-	// now used by another live server. Stop never contacts that server.
+	// When the archive lock is free, discard stale metadata. Another live server can use
+	// the old port. Stop never contacts that server.
 	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
 		t.Fatalf("stale stop: %s %v", output, err)
 	}

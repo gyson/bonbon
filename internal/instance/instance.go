@@ -25,8 +25,8 @@ func Read(directory string) (protocol.ServerInfo, error) {
 	return info, nil
 }
 
-// Publish replaces the descriptor atomically, so readers never see partial JSON.
-// The caller must hold the directory's server lock until Remove completes.
+// Publish replaces the descriptor atomically. Readers never see partial JSON. The
+// caller must hold the directory's server lock until Remove completes.
 func Publish(info protocol.ServerInfo) error {
 	file, err := os.CreateTemp(info.DataDir, ".server-*.json")
 	if err != nil {
@@ -52,9 +52,9 @@ func Remove(directory string) error {
 	return err
 }
 
-// RemoveOwned leaves a replacement server's descriptor intact during shutdown.
-// The root keeps inspection and removal in the same directory if it is renamed.
-// The caller still holds its server lock.
+// RemoveOwned leaves a replacement server's descriptor intact during shutdown. If the
+// directory is renamed, the root keeps inspection and removal in that directory. The
+// caller still holds its server lock.
 func RemoveOwned(owner protocol.ServerInfo) error {
 	root, err := os.OpenRoot(owner.DataDir)
 	if errors.Is(err, os.ErrNotExist) {

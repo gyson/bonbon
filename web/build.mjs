@@ -18,8 +18,8 @@ await build({
 });
 await copyFile(new URL('index.html', import.meta.url), new URL('index.html', output));
 const logo = await readFile(new URL('src/bonbon.svg', import.meta.url), 'utf8');
-// A square viewport preserves the horizontal logo's proportions in the 22-point
-// macOS status item. Render at 2x; template coloring uses only the alpha channel.
+// A square viewport preserves the horizontal logo's proportions in the 22-point macOS
+// status item. Render at 2x. Template coloring uses only the alpha channel.
 const menuLogo = logo.replace('<svg ', '<svg width="44" height="44" ');
 await writeFile(new URL('assets/menubar.png', output),
   new Resvg(menuLogo, { font: { loadSystemFonts: false } }).render().asPng());

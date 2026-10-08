@@ -92,9 +92,9 @@ func visibleText(s string) string {
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
 }
 
-// These synthetic frames are also checked by the real browser xterm.js engine.
-// Keep both sides honest: Go regenerates them; JS compares rendering with the
-// original PTY events, including split sequences and the alternate buffer.
+// The real browser xterm.js engine also checks these synthetic frames. Go regenerates
+// them. JavaScript compares their display with original PTY events, including split
+// sequences and the alternate buffer.
 func TestBrowserFrames(t *testing.T) {
 	type step struct {
 		Input string           `json:"input,omitempty"`

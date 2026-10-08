@@ -14,8 +14,8 @@ import (
 	"bonbon/internal/instance"
 )
 
-// Stand in for AppKit so lifecycle tests can run without a graphical login.
-// Use the real inherited pipe, child process, server, and archive shutdown.
+// Replace AppKit for lifecycle tests that run without a graphical login. Use the real
+// inherited pipe, child process, server, and archive shutdown.
 func menuBarFixture() {
 	log, err := os.OpenFile(os.Getenv("BONBON_TEST_MENU_HELPER"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestMenuQuitLeavesReplacementConnectionFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Ensure even a failing test stops only the fixture server we launched.
+	// If the test fails, stop only the fixture server that it launched.
 	t.Cleanup(func() {
 		client.StopInstance(original)
 		waitServerRelease(target)

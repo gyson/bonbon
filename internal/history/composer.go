@@ -7,8 +7,8 @@ import (
 
 var ErrDraftConflict = errors.New("draft changed in another view; copy your edits before reloading")
 
-// LatestDraft and SaveDraft keep immutable draft revisions in the event archive.
-// Drafts have no run ID and must not be treated as sent messages or replay input.
+// LatestDraft and SaveDraft keep immutable draft revisions in the event archive. Drafts
+// have no run ID. Do not treat them as sent messages or replay input.
 func (s *Store) LatestDraft(sid string) (Event, error) {
 	var event Event
 	err := s.db.QueryRow("SELECT seq,data FROM events WHERE session_id=? AND kind='draft' ORDER BY seq DESC LIMIT 1", sid).Scan(&event.Seq, &event.Data)
@@ -42,14 +42,14 @@ func (s *Store) SaveDraft(sid string, revision int64, data []byte) (int64, error
 	return seq, tx.Commit()
 }
 
-// Attachment scope is checked on every read, including draft references.
+// Verify attachment scope on every read, including draft references.
 func (s *Store) Attachment(sid string, seq int64) (Event, error) {
 	var event Event
 	err := s.db.QueryRow("SELECT seq,data,text FROM events WHERE session_id=? AND seq=? AND kind='attachment'", sid, seq).Scan(&event.Seq, &event.Data, &event.Text)
 	return event, err
 }
 
-// Draft autosaves validate references without repeatedly loading the file blobs.
+// Draft autosaves validate references without repeated reads of file blobs.
 func (s *Store) AttachmentInfo(sid string, seq int64) (Event, error) {
 	var event Event
 	err := s.db.QueryRow("SELECT seq,text FROM events WHERE session_id=? AND seq=? AND kind='attachment'", sid, seq).Scan(&event.Seq, &event.Text)

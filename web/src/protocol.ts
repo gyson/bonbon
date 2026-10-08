@@ -1,7 +1,7 @@
-// The browser uses the same one-request-per-connection protocol as the Go CLI.
+// The browser and Go CLI use the same protocol. Each connection carries one request.
 export const VERSION = 'bonbon/15';
 
-// These types mirror internal/protocol/protocol.go.
+// These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
 
 export interface ServerInfo {
@@ -206,15 +206,16 @@ export class Peer {
     return true;
   }
 
-  // Acknowledge only after parsing the complete frame, including ended views.
+  // Acknowledge the complete frame only after the parser finishes. This also applies to
+  // ended views.
   acknowledgeFrame(revision: number): void {
     if (this.greeted && !this.finished && this.socket.readyState === 1) {
       this.socket.send(JSON.stringify({ type: 'frame-ack', revision }));
     }
   }
 
-  // This receipt confirms a PTY write, not application acceptance or completion.
-  // Never retry input: a lost receipt may follow a successful write.
+  // This receipt confirms a PTY write. It does not confirm application acceptance or
+  // completion. Never retry input. A successful write can have a lost receipt.
   writeInput(data: string, id = crypto.randomUUID()): Promise<void> {
     if (this.input) return Promise.reject(new Error('A submission is already in progress.'));
     return new Promise<void>((resolve, reject) => {

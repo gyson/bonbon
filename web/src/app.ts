@@ -339,7 +339,7 @@ function makeTerminal(): Terminal {
     cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 2000,
     fontFamily: 'Menlo, Monaco, Consolas, monospace', disableStdin: true, screenReaderMode: true,
     theme: { background: '#18201e', foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' },
-    // Terminal output must not open links or read/write the browser clipboard.
+    // Terminal output must not open links, read the browser clipboard, or write to it.
     linkHandler: { activate() {} },
   });
   fit = new FitAddon();
@@ -630,7 +630,7 @@ async function initialize() {
   $('refresh').onclick = refreshSessions;
   $('filter').oninput = () => {
     pageOffset = 0;
-    // Invalidate in-flight results before the debounce completes.
+    // Invalidate pending results before the debounce delay ends.
     refreshGeneration++;
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
