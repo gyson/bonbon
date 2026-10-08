@@ -19,7 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Control associates an input receipt with the view that submitted it.
+// Control associates an input receipt with the view that sent the input.
 type Control struct {
 	protocol.Message
 	Ack func(error)
@@ -32,8 +32,8 @@ type Launch struct {
 	Env   []string
 }
 
-// Run owns an agent PTY on the server. Terminal controls arrive from the client;
-// the server commits original output before emulation and input before delivery.
+// Run owns an agent PTY on the server. Terminal controls arrive from the client. The
+// server commits original output before emulation and input before delivery.
 func Run(ctx context.Context, store *history.Store, session history.Session, request Launch, controls <-chan Control, publish func(history.Event) ([]byte, error)) (int, error) {
 	command := []string{request.Shell, "-i"}
 	size := &pty.Winsize{Rows: request.Size.Rows, Cols: request.Size.Cols}
@@ -91,8 +91,8 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())
 	}
-	// Register the PTY with Go's poller so writes can have deadlines and closing
-	// it can interrupt a read, including when a descendant retains the slave.
+	// Register the PTY with Go's poller to enable write deadlines. Then a close can
+	// interrupt a read, even when a descendant retains the slave.
 	fd, err := unix.FcntlInt(tty.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 	tty.Close()
 	if err == nil {
@@ -146,8 +146,9 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 	}()
 	childDone := make(chan error, 1)
 	go func() { childDone <- cmd.Wait() }()
-	// This is the user's explicit first shell command, not the composer's draft.
-	// Record before delivery, once per launch. Never replay on reconnect/restart.
+	// This is the user's explicit first shell command. It is separate from the composer
+	// draft. Record it before delivery, once per launch. Never replay it on reconnect or
+	// restart.
 	if request.Command != "" {
 		input := []byte(request.Command + "\r")
 		if err := appendEvent("input", input, ""); err != nil {
@@ -220,8 +221,8 @@ wait:
 				report(err)
 			case "resize":
 				if size.Rows == control.Size.Rows && size.Cols == control.Size.Cols {
-					// A new view gets the server's current screen. Reattaching at
-					// the same size must not provoke fresh application output.
+					// A new view gets the server's current screen. Reattachment at the same size must
+					// not cause fresh application output.
 					continue
 				}
 				size = &pty.Winsize{Rows: control.Size.Rows, Cols: control.Size.Cols}
@@ -240,8 +241,8 @@ wait:
 			}
 		}
 	}
-	// End the launched command group and any foreground shell job. Programs
-	// that deliberately detach into other sessions are outside this PTY lifetime.
+	// End the launched command group and any foreground shell job. This PTY lifetime does
+	// not control programs that deliberately detach into other sessions.
 	signalOwned(syscall.SIGKILL)
 	select {
 	case err := <-outputDone:
@@ -270,8 +271,8 @@ wait:
 }
 
 func resize(tty *os.File, size *pty.Winsize) error {
-	// File.Fd switches pollable descriptors back to blocking mode. Use the raw
-	// connection to resize without losing interruptible reads and write deadlines.
+	// File.Fd changes pollable descriptors to blocking mode. Use the raw connection to
+	// resize and preserve interruptible reads and write deadlines.
 	connection, err := tty.SyscallConn()
 	if err != nil {
 		return err

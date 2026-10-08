@@ -227,8 +227,8 @@ func TestWebSocketEndpointAndBrowserOrigins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Use plain JSON over the public endpoint, without BonBon's client or
-			// transport helpers, as the browser does.
+			// Use plain JSON over the public endpoint, as the browser does. Do not use BonBon's
+			// client or transport helpers.
 			conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 			readGreeting(t, conn)
 			if err = conn.WriteJSON(map[string]any{
@@ -322,8 +322,8 @@ func TestServerStopClosesIdleAndStalledClients(t *testing.T) {
 	if err := stalled.ReadJSON(&frame); err != nil || frame.Type != "frame" {
 		t.Fatalf("stalled frame: %+v %v", frame, err)
 	}
-	// Never acknowledge this frame. Shutdown must not wait for the usual 30s
-	// acknowledgement deadline or interrupt process cleanup and durable capture.
+	// Never acknowledge this frame. Shutdown must not wait for the usual 30-second
+	// acknowledgment deadline. Process cleanup and durable capture must continue.
 	if output, err := testCommand("--dir", directory, "server", "stop").CombinedOutput(); err != nil {
 		t.Fatalf("stop with idle clients: %s %v", output, err)
 	}

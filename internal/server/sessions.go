@@ -16,8 +16,8 @@ import (
 	"bonbon/internal/terminal"
 )
 
-// A running session belongs to the server. Attachments are replaceable views;
-// their cancellation must never cancel the process or recording.
+// The server owns the active session. Attachments are replaceable views. Their
+// cancellation must never cancel the process or recording.
 type runningSession struct {
 	id         string
 	controls   chan agent.Control
@@ -26,7 +26,7 @@ type runningSession struct {
 	mu         sync.Mutex
 	clients    map[*attachment]struct{}
 	controller *attachment
-	controlMu  sync.Mutex // Orders accepted input, size changes and control transfers.
+	controlMu  sync.Mutex // Orders accepted input, size changes, and control transfers.
 	terminal   *terminal.State
 	revision   int64
 	runID      string
@@ -36,11 +36,11 @@ type runningSession struct {
 
 type attachment struct {
 	conn     *protocol.Conn
-	messages chan protocol.Message // Reliable receipts, never terminal output.
-	changed  chan struct{}         // Coalesced render demand, not a queue of PTY events.
+	messages chan protocol.Message // Carries reliable receipts only.
+	changed  chan struct{}         // Combines render requests. Excludes PTY events.
 	closed   chan struct{}
 	once     sync.Once
-	size     protocol.Size // Display viewport; only the controller resizes the PTY.
+	size     protocol.Size // Stores the viewport. Only the controller resizes the PTY.
 }
 
 func (a *attachment) close() { a.once.Do(func() { close(a.closed); a.conn.Close() }) }
@@ -88,8 +88,8 @@ func (a *attachment) inputAck(id string, err error) {
 	}
 }
 
-// Serialize accepted controls before changing owners. Already accepted input may
-// finish during a handoff; its receipt always belongs to the originating view.
+// Serialize accepted controls before a change of controller. Accepted input may finish
+// during the transfer. Its receipt always belongs to the original view.
 func (r *runningSession) control(a *attachment, message protocol.Message) {
 	r.controlMu.Lock()
 	defer r.controlMu.Unlock()
@@ -272,8 +272,9 @@ func (s *Server) resumeSession(conn *protocol.Conn, id string, size protocol.Siz
 	}
 }
 
-// One frame may be in flight. Capture keeps updating the emulator while the
-// client renders. After its acknowledgement, diff against the accepted baseline.
+// Only one frame can be outstanding. Capture continues to update the emulator while the
+// client renders. After acknowledgment, compare the latest state with the accepted
+// baseline.
 func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Size, launch func()) {
 	a := r.subscribe(conn, size)
 	if launch != nil {
@@ -353,7 +354,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 			if sent != acked && time.Since(sentAt) > 30*time.Second {
 				return
 			}
-			// Coalesce output while a frame is outstanding; render at most 20 times/sec.
+			// Combine output while a frame is outstanding. Render at most 20 times per second.
 			if dirty && sent == acked {
 				continue
 			}
@@ -426,7 +427,7 @@ func (s *Server) listSessions(filter history.SessionFilter) ([]protocol.SessionI
 }
 
 func (s *Server) archiveSession(id string, archived bool) error {
-	// Serialize with launch so archiving cannot race a new PTY or worktree.
+	// Serialize archive changes with launch to prevent a race with a new PTY or worktree.
 	s.launchMu.Lock()
 	defer s.launchMu.Unlock()
 	if archived && s.running(id) != nil {

@@ -72,8 +72,8 @@ func (s *Server) savePreparation(request *protocol.Request) (history.Session, er
 	return s.store.SavePreparation(session.ID, request.Name, p)
 }
 
-// Claim launch before filesystem or process effects. A lost connection can only
-// reattach; neither reconnect nor restart repeats a possibly delivered command.
+// Claim launch before filesystem or process changes. After a lost connection, only
+// reattach. Reconnect and restart must not repeat a possibly delivered command.
 func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, size protocol.Size) (history.Session, *agent.Launch, error) {
 	session, err := s.store.Session(id)
 	if err != nil {
@@ -102,7 +102,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 		var worktree history.Worktree
 		run.Workspace, worktree, err = s.createWorktree(ctx, id, source, p.Base, p.Branch)
 		if err != nil {
-			// Only return to preparation when no checkout could have been created.
+			// Return to preparation only if no checkout could have been created.
 			current, readErr := s.store.Session(id)
 			if readErr == nil && (current.Worktree == nil || current.Worktree.State == "removed") {
 				err = errors.Join(err, s.store.SetPreparationState(id, revision, "creating", "draft"))

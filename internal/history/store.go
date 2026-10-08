@@ -97,9 +97,9 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func enableWAL(db *sql.DB) error {
-	// Changing journal mode needs an exclusive lock. SQLite can return BUSY
-	// without invoking its busy handler when concurrent openers upgrade locks.
-	// Retry only this idempotent setting, after committing the schema.
+	// A journal mode change needs an exclusive lock. SQLite can return BUSY without its
+	// busy handler when concurrent openers upgrade locks. After the schema commits, retry
+	// only this idempotent setting.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {

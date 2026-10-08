@@ -30,8 +30,8 @@ type Server struct {
 	sessions map[string]*runningSession
 }
 
-// Serve stops accepting requests on cancellation and waits for agent cleanup.
-// The caller owns the archive and the exclusive server lock for its directory.
+// On cancellation, Serve stops new requests and waits for agent cleanup. The caller
+// owns the archive and the exclusive server lock for its directory.
 func Serve(ctx context.Context, listener net.Listener, store *history.Store) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -62,8 +62,8 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 			http.Error(w, "server is stopping", http.StatusServiceUnavailable)
 			return
 		}
-		// HTTP shutdown does not wait for upgraded connections. Register before
-		// upgrading, and prevent registrations once shutdown begins.
+		// HTTP shutdown does not wait for upgraded connections. Register before the upgrade.
+		// Prevent new registrations after shutdown starts.
 		s.wg.Add(1)
 		s.mu.Unlock()
 		defer s.wg.Done()
@@ -104,7 +104,7 @@ func Serve(ctx context.Context, listener net.Listener, store *history.Store) err
 
 func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	// Let attached clients receive the final screen and exit status during normal
-	// shutdown. A stalled peer must still release its handler within five seconds.
+	// shutdown. A stalled peer must release its handler within five seconds.
 	finished := make(chan struct{})
 	defer close(finished)
 	stopClose := context.AfterFunc(ctx, func() {

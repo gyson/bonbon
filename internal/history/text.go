@@ -5,8 +5,8 @@ import (
 	"unicode/utf8"
 )
 
-// Text projects terminal bytes to searchable text. It is deliberately not a
-// screen emulator or a message parser. Original bytes remain authoritative.
+// Text converts terminal bytes to searchable text. It does not emulate a screen or
+// parse messages. Original bytes remain authoritative.
 type Text struct {
 	state   byte
 	pending []byte

@@ -64,8 +64,8 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRecent(newer.ID, activity)
-	// Only qualifying event sequences break timestamp ties, including for input
-	// and lifecycle events that have no associated output.
+	// Only qualifying event sequences determine the order when timestamps are equal. This
+	// includes input and lifecycle events without associated output.
 	for _, kind := range []string{"start", "run", "input", "output", "notice"} {
 		appendAt(older.ID, kind, activity)
 		assertRecent(older.ID, activity)

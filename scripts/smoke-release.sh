@@ -1,5 +1,5 @@
 #!/bin/sh
-# Exercise a release executable with an isolated instance and no desktop menu.
+# Test a release executable with an isolated instance and no desktop menu.
 set -eu
 binary=${1:?Usage: sh scripts/smoke-release.sh BINARY VERSION}
 version=${2:?Expected release version is required}

@@ -114,9 +114,9 @@ func TestSharedViewsControlAndIndependentFlow(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("controller input missing")
 	}
-	// Finish the accepted write after another view takes control. The receipt
-	// must still reach its sender, even when another view uses the same input ID.
-	// First must acknowledge its baseline before it may request control.
+	// Finish the accepted write after another view takes control. The receipt must reach
+	// its sender, even when another view uses the same input ID. The first view must
+	// acknowledge its baseline before it requests control.
 	first.send(protocol.Message{Type: "frame-ack", Revision: firstFrame.Revision})
 	first.send(protocol.Message{Type: "take-control", Size: size})
 	if !first.read("control").Controlling || second.read("control").Controlling {

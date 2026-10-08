@@ -70,7 +70,7 @@ func (s *Store) Query(ctx context.Context, query string) (result QueryResult, er
 		return result, errors.New("provide one read-only SQL query")
 	}
 	defer stmt.Close()
-	// Let SQLite parse trailing whitespace/comments. Never execute a second statement.
+	// Let SQLite parse trailing whitespace and comments. Never execute a second statement.
 	extra, _, err := conn.Prepare(tail)
 	if extra != nil {
 		extra.Close()
@@ -127,7 +127,7 @@ func authorizeQuery(action sqlite3.AuthorizerActionCode, _, function, _, _ strin
 	case sqlite3.AUTH_SELECT, sqlite3.AUTH_READ, sqlite3.AUTH_RECURSIVE:
 		return sqlite3.AUTH_OK
 	case sqlite3.AUTH_FUNCTION:
-		// No file or extension functions are installed, and never allow them here.
+		// BonBon installs no file or extension functions. Never allow them here.
 		switch strings.ToLower(function) {
 		case "load_extension", "readfile", "writefile":
 			return sqlite3.AUTH_DENY

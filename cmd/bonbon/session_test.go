@@ -49,8 +49,8 @@ func fixtureAgent() {
 		os.Exit(130)
 	case "stream":
 		term.MakeRaw(0)
-		// Raw output needs CRLF. LF alone drifts right on every tick and can
-		// split marker words across screen rows during slower race-enabled runs.
+		// Raw output needs CRLF. LF alone moves output right on each tick. This can split
+		// marker words across rows during slower runs with the race detector.
 		fmt.Print("READY\r\n")
 		done := make(chan struct{})
 		go func() {
@@ -125,8 +125,8 @@ func fixtureAgent() {
 
 func mustCWD() string { cwd, _ := os.Getwd(); return cwd }
 
-// A synthetic browser view exercises the public session protocol without a
-// terminal client. Only the server owns a PTY.
+// A synthetic browser view tests the public session protocol without a terminal client.
+// Only the server owns a PTY.
 type sessionView struct {
 	conn        *protocol.Conn
 	done        chan protocol.Message
@@ -562,7 +562,7 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	if len(sessions) != 1 || sessions[0].Run.PID != pid {
 		t.Fatal("ended view created a run", sessions)
 	}
-	stopTestSession(t, id) // Idempotent after normal exit.
+	stopTestSession(t, id) // Repeated stop is safe after normal exit.
 }
 
 func TestDefaultShellAndStopForegroundJob(t *testing.T) {

@@ -5,7 +5,7 @@ export class SessionSplit {
   private readonly terminal = element('terminal-pane', HTMLElement);
   private readonly composer = element('composer', HTMLElement);
   private readonly divider = element('session-divider', HTMLElement);
-  // A view preference only; switching sessions keeps it, reloading resets it.
+  // This preference belongs to the view. Session changes preserve it. Reload resets it.
   private height = 240;
   private drag: { pointer: number; y: number; height: number } | null = null;
 
@@ -78,7 +78,7 @@ export class SessionSplit {
   private layout(): void {
     const bounds = this.bounds();
     if (!bounds) return;
-    // Clamp the display without losing the preferred height on a smaller window.
+    // Limit the displayed height to the smaller window. Keep the preferred height.
     const height = Math.max(bounds.min, Math.min(bounds.max, this.height));
     this.composer.style.flexBasis = `${height}px`;
     const percent = (value: number) => Math.round(100 * (bounds.total - value) / bounds.total);

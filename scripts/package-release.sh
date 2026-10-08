@@ -1,5 +1,5 @@
 #!/bin/sh
-# Called by make release-assets after the frontend has been built.
+# make release-assets calls this script after the frontend build.
 set -eu
 version=${1:?Usage: sh scripts/package-release.sh VERSION}
 printf '%s\n' "$version" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {

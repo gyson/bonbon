@@ -18,7 +18,7 @@ async function noticeFiles(directory) {
   return paths.sort();
 }
 
-// Embed notices so they stay with the executable after installation or updating.
+// Embed notices to keep them with the executable after installation or updates.
 export async function licenseNotices() {
   const notices = [];
   async function add(label, path) {
@@ -41,8 +41,8 @@ export async function licenseNotices() {
     if (paths.length === 0) throw new Error(`Missing license notices for ${name}`);
     for (const path of paths) await add(`${name} — ${relative(directory, path)}`, path);
   }
-  // goffi's NOTICE attributes its fakecgo code to Apache-2.0, but its module
-  // contains only the MIT license text. Include the attributed license as well.
+  // goffi's NOTICE attributes its fakecgo code to Apache-2.0. Its module contains only
+  // the MIT license text. Include the attributed license too.
   await add('github.com/go-webgpu/goffi/internal/fakecgo — Apache-2.0', join(root, 'licenses/Apache-2.0.txt'));
   return notices.join('\n\n' + '='.repeat(72) + '\n\n');
 }

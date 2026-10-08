@@ -141,7 +141,8 @@ func (f *fixture) run(env []string, args ...string) (string, error) {
 }
 
 func (f *fixture) environment(extra ...string) []string {
-	// Use only controlled settings. Never contact GitHub or touch the real home.
+	// Use only controlled settings. Never contact GitHub or access the real home
+	// directory.
 	return append([]string{
 		"PATH=" + f.bin + ":/usr/bin:/bin", "HOME=" + f.root, "TMPDIR=" + f.root,
 		"BONBON_INSTALL_DIR=" + filepath.Dir(f.destination), "TEST_ROOT=" + f.root,
@@ -167,7 +168,8 @@ func TestInstallAndReplace(t *testing.T) {
 			}
 			f.release("0.0.1", arch, "0.0.1")
 			f.existing("0.0.0")
-			// Hold the previous inode open: replacement must use rename, not truncate.
+			// Keep the previous inode open. Replacement must rename the file. It must not
+			// truncate it.
 			previous, err := os.Open(f.destination)
 			if err != nil {
 				t.Fatal(err)

@@ -18,9 +18,9 @@ type SessionFilter struct {
 	Query    string
 }
 
-// ListSessions orders by terminal input, output, and run lifecycle activity,
-// including output while detached. View changes and unsent drafts do not count.
-// Search and archive filtering happen before pagination, including old sessions.
+// ListSessions orders sessions by terminal input, output, and run lifecycle activity.
+// This includes output while detached. View changes and unsent drafts do not count.
+// Search and archive filters apply before pagination, including to old sessions.
 func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
 	if filter.Limit == 0 {
 		filter.Limit = 10
@@ -70,8 +70,8 @@ func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
 	return result, nil
 }
 
-// Archiving changes visibility only. The transaction also protects callers from
-// archiving recorded active runs or an unfinished launch claim.
+// Archive changes affect visibility only. The transaction also prevents archive changes
+// for recorded active runs or an unfinished launch claim.
 func (s *Store) SetSessionArchived(id string, archived bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -132,8 +132,9 @@ func (s *Store) SaveRun(r *Run) error {
 	return err
 }
 
-// MarkInterrupted runs once at server startup, before accepting session requests.
-// Missing exits remain unknown; this changes history metadata, not process state.
+// MarkInterrupted runs once at server startup, before the server accepts session
+// requests. Missing exits remain unknown. This changes only history metadata. It does
+// not change process state.
 func (s *Store) MarkInterrupted() error {
 	tx, err := s.db.Begin()
 	if err != nil {

@@ -3,8 +3,8 @@ import { ConnectionError, Peer } from './protocol.js';
 import type { ServerInfo, ServerMessage, Size, StreamRequest } from './protocol.js';
 import { TerminalStream } from './terminal-stream.js';
 
-// One selected session owns its connection, frame baseline, and reconnect timer.
-// Closing it cancels retries and makes callbacks from the old view harmless.
+// One selected session owns its connection, frame baseline, and reconnect timer. When
+// it closes, it cancels retries and ignores callbacks from the old view.
 export class SessionConnection {
   peer: Peer | null = null;
   ready = false;
@@ -49,7 +49,7 @@ export class SessionConnection {
         message: message => {
           if (this.closed || this.peer !== peer) return;
           if (message.type === 'session') {
-            // Once the ID is known, retries can only rejoin that same session.
+            // After the ID is known, retries can only rejoin that session.
             this.request = { operation: 'session-resume', session: message.session, size: this.host.size() };
             resolve();
           }

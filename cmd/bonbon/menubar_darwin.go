@@ -14,8 +14,8 @@ import (
 
 const menuBarSupported = true
 
-// systray locks the initial OS thread during init. Only this child enters
-// AppKit; the CLI and server remain independent of the native event loop.
+// systray locks the initial OS thread during init. Only this child enters AppKit. The
+// CLI and server remain independent of the native event loop.
 func runNativeMenu(ended <-chan struct{}, openUI, quit func() error) error {
 	select {
 	case <-ended:

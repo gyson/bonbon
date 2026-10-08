@@ -86,7 +86,7 @@ func TestWebSocketBoundsMessages(t *testing.T) {
 	if err := conn.Send(Message{Type: "error", Error: strings.Repeat("x", maxMessage)}); err == nil {
 		t.Fatal("sent oversized JSON message")
 	}
-	// A fragmented message must be bounded across all its WebSocket frames.
+	// The message limit must include all WebSocket fragments.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

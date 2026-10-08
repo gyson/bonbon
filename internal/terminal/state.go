@@ -1,5 +1,5 @@
-// Package terminal owns the headless terminal and renders display-only ANSI.
-// Original PTY bytes belong to the archive, never to the client render queue.
+// Package terminal owns the headless terminal and renders ANSI for display only. Store
+// original PTY bytes in the archive. Do not put them in the client render queue.
 package terminal
 
 import (
@@ -20,8 +20,8 @@ func ValidSize(size protocol.Size) bool {
 	return size.Cols >= 2 && size.Cols <= 512 && size.Rows >= 1 && size.Rows <= 256
 }
 
-// State is used under the owning session's lock. Responses are generated here,
-// even without a client; replay callers discard them instead of writing input.
+// State requires the owning session's lock. It generates responses even without a
+// client. Replay callers discard these responses and write no input.
 type State struct {
 	term          *xterm.Terminal
 	lines         *xterm.CircularList[*xterm.BufferLine]
@@ -35,8 +35,8 @@ type State struct {
 
 func New(size protocol.Size) *State {
 	s := &State{term: xterm.New(xterm.WithCols(int(size.Cols)), xterm.WithRows(int(size.Rows)), xterm.WithScrollback(Scrollback))}
-	// The display clients don't encode Kitty extended keyboard events. Don't
-	// advertise that optional protocol to applications running in this terminal.
+	// The display clients do not encode Kitty extended keyboard events. Do not advertise
+	// that optional protocol to applications in this terminal.
 	s.term.RegisterCsiHandler(xterm.FunctionIdentifier{Prefix: '?', Final: 'u'}, func(*xterm.Params) bool { return true })
 	s.term.OnData(func(data string) { s.responses = append(s.responses, data...) })
 	s.trackBuffer()
@@ -62,7 +62,7 @@ func (s *State) Apply(event history.Event) ([]byte, error) {
 		}
 		if int(size.Cols) != s.term.Cols() || int(size.Rows) != s.term.Rows() {
 			s.term.Resize(int(size.Cols), int(size.Rows))
-			s.epoch++ // Resizing may reflow history; send a fresh view.
+			s.epoch++ // A resize can reflow history. Send a fresh view.
 		}
 	case "output":
 		s.term.Write(event.Data)
@@ -71,8 +71,8 @@ func (s *State) Apply(event history.Event) ([]byte, error) {
 	return s.responses, nil
 }
 
-// View is derived presentation data. It deliberately excludes executable OSC
-// sequences, terminal queries, clipboard operations and native process state.
+// View contains derived display data. It excludes executable OSC sequences, terminal
+// queries, clipboard operations, and native process state.
 type View struct {
 	Size    protocol.Size `json:"size"`
 	History []string      `json:"history"`
@@ -177,7 +177,7 @@ func renderLine(line *xterm.BufferLine, cols int) string {
 		if chars == "" {
 			chars = " "
 		}
-		// Untrusted text may never introduce a control sequence into a rendered row.
+		// Untrusted text must not add a control sequence to a rendered row.
 		out.WriteString(strings.Map(func(r rune) rune {
 			if unicode.IsControl(r) {
 				return -1
@@ -245,8 +245,9 @@ func inputModes(t *xterm.Terminal) string {
 	return out.String()
 }
 
-// Render compares with the last acknowledged view. History scrolling is generated
-// from rendered rows, not copied PTY bytes. A reset or reflow replaces the baseline.
+// Render compares the current view with the last acknowledged view. It generates
+// history scrolling from rendered rows. It does not copy PTY bytes. A reset or reflow
+// replaces the baseline.
 func (v *View) Render(previous *View) (data []byte, full bool) {
 	full = previous == nil || previous.Size != v.Size || previous.Epoch != v.Epoch
 	var added []string
@@ -265,8 +266,8 @@ func (v *View) Render(previous *View) (data []byte, full bool) {
 		}
 	}
 	var out strings.Builder
-	// The client is a display surface: no source scroll regions, origin mode or
-	// autowrap. Explicit cell positions work for both normal and alternate screens.
+	// The client only displays frames. It uses no source scroll regions, origin mode, or
+	// autowrap. Explicit cell positions work for normal and alternate screens.
 	out.WriteString("\x1b[?7l\x1b[?6l\x1b[4l\x1b[r\x1b[0m")
 	if full {
 		out.WriteString("\x1b[2J\x1b[3J\x1b[H")

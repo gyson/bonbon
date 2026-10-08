@@ -4,8 +4,9 @@ import type { ServerMessage } from './protocol.js';
 
 type Display = Pick<Terminal, 'write' | 'resize' | 'reset'>;
 
-// Frames contain server-rendered cells, never raw application escape sequences.
-// Only one frame is outstanding; its ack follows asynchronous xterm parsing.
+// Frames contain cells rendered by the server. They exclude raw application escape
+// sequences. Only one frame is outstanding. Acknowledge it after asynchronous xterm
+// parsing finishes.
 export class TerminalStream {
   resizing = false;
   private pending = false;

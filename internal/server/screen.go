@@ -9,8 +9,8 @@ import (
 	"bonbon/internal/terminal"
 )
 
-// The final view is a derived cache in SQLite. It is not a resumable emulator or
-// process checkpoint. Original output and sizes remain the authoritative record.
+// The final view is a derived cache in SQLite. It cannot resume an emulator or process.
+// Original output and sizes remain the authoritative record.
 type savedScreen struct {
 	Format int            `json:"format"`
 	View   *terminal.View `json:"view"`
@@ -42,8 +42,8 @@ func (s *Server) loadScreen(id string) (*terminal.View, error) {
 		}
 		return saved.View, nil
 	}
-	// Interrupted recordings and recordings without a final cache are emulated on
-	// the server. No historical query replies or input are sent to a process/client.
+	// The server emulates interrupted recordings and recordings without a final cache. It
+	// sends no historical query replies or input to a process or client.
 	state := terminal.New(protocol.Size{Cols: 80, Rows: 24})
 	var after int64
 	for {
