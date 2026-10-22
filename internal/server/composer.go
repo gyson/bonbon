@@ -77,6 +77,48 @@ func (s *Server) composer(sid string, draft *protocol.Draft) (protocol.Composer,
 	return result, nil
 }
 
+// sentPage keeps a page below the 16 MiB message limit, also with escaped draft text.
+const sentPage = 20
+
+// sentMessages lists sends from the message editor that are older than revision before,
+// newest first. The status is derived from the next draft revision. The editor clears
+// the draft only after an input receipt. Any other next revision, or none, leaves the
+// delivery unconfirmed.
+func (s *Server) sentMessages(sid string, before int64) (protocol.SentPage, error) {
+	page := protocol.SentPage{Messages: []protocol.SentMessage{}}
+	if _, err := s.store.Session(sid); err != nil {
+		return page, err
+	}
+	if before < 0 {
+		return page, errors.New("invalid revision")
+	}
+	drafts, more, err := s.store.SentDrafts(sid, before, sentPage)
+	if err != nil {
+		return page, err
+	}
+	for _, sent := range drafts {
+		var draft protocol.Draft
+		if err = json.Unmarshal(sent.Data, &draft); err != nil {
+			return page, fmt.Errorf("read draft revision %d: %w", sent.Seq, err)
+		}
+		message := protocol.SentMessage{Revision: sent.Seq, Created: sent.Created, Text: draft.Text, Attachments: []protocol.Attachment{}}
+		for _, id := range draft.Attachments {
+			attachment, err := s.attachment(sid, id, false)
+			if err != nil {
+				return page, err
+			}
+			message.Attachments = append(message.Attachments, attachment)
+		}
+		var next protocol.Draft
+		if sent.Next != nil && json.Unmarshal(sent.Next, &next) == nil {
+			message.Confirmed = !next.Pending && next.Text == "" && len(next.Attachments) == 0
+		}
+		page.Messages = append(page.Messages, message)
+	}
+	page.More = more
+	return page, nil
+}
+
 // A draft watcher keeps only the newest draft. A slow view never queues old revisions.
 type draftWatcher struct {
 	mu      sync.Mutex

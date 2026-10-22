@@ -57,7 +57,7 @@
       </div>
       <div id="session-divider" role="separator" tabindex="0" aria-label="Terminal size" aria-orientation="horizontal" aria-controls="terminal-pane" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65" title="Drag to resize. Use Up and Down arrow keys when focused." hidden><span aria-hidden="true"></span></div>
       <section id="composer" aria-label="Message editor">
-        <label for="composer-text">Compose a message</label>
+        <div class="composer-heading"><label for="composer-text">Compose a message</label><button id="composer-history" disabled>Sent messages</button></div>
         <textarea id="composer-text" rows="4" placeholder="Write your request. Start the session when you’re ready…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
         <div id="composer-files" aria-label="Attached files"></div>
         <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Send ↵</button></div>
@@ -100,6 +100,13 @@
       <p id="rename-error" class="form-error" role="alert" hidden></p>
       <button id="rename-submit" type="submit" class="primary">Save title</button>
     </form>
+  </dialog>
+  <dialog id="sent-dialog" class="sent-dialog" aria-labelledby="sent-title">
+    <div class="dialog-heading"><div><span class="eyebrow">MESSAGE EDITOR</span><h2 id="sent-title">Sent messages</h2></div><button type="button" id="sent-close" class="text-button" aria-label="Close sent messages">✕</button></div>
+    <p class="form-help">Messages that Send sent in this session. The newest message is at the bottom. Text typed directly in the terminal is not included. Copy puts the message text on the clipboard.</p>
+    <button id="sent-more" hidden>Show older messages</button>
+    <ol id="sent-list" class="sent-list"></ol>
+    <p id="sent-status" role="status"></p>
   </dialog>
   <noscript>Enable JavaScript to use BonBon’s web UI.</noscript>
 </body>

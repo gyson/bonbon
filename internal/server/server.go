@@ -205,6 +205,9 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, result, err)
 	case "composer-watch":
 		s.watchComposer(ctx, conn, request.Session)
+	case "composer-sent":
+		result, err := s.sentMessages(request.Session, request.Revision)
+		s.reply(conn, result, err)
 	case "composer-attach":
 		result, err := s.upload(request.Session, request.Upload)
 		s.reply(conn, result, err)

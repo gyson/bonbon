@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 )
 
 // ErrDraftSent reports that another view started a send after the base revision of a
@@ -11,7 +12,8 @@ import (
 var ErrDraftSent = errors.New("a message was sent from another view after this draft loaded")
 
 // LatestDraft and SaveDraft keep immutable draft revisions in the event archive. Drafts
-// have no run ID. Do not treat them as sent messages or replay input.
+// have no run ID. Do not treat them as sent messages or replay input. Only a pending
+// revision records a send attempt. See SentDrafts.
 func (s *Store) LatestDraft(sid string) (Event, error) {
 	var event Event
 	err := s.db.QueryRow("SELECT seq,data FROM events WHERE session_id=? AND kind='draft' ORDER BY seq DESC LIMIT 1", sid).Scan(&event.Seq, &event.Data)
@@ -70,14 +72,61 @@ func sentSince(tx *sql.Tx, sid string, base int64) (bool, error) {
 		if err = rows.Scan(&data); err != nil {
 			return false, err
 		}
-		var draft struct {
-			Pending bool `json:"pending"`
-		}
-		if json.Unmarshal(data, &draft) == nil && draft.Pending {
+		if pending(data) {
 			return true, nil
 		}
 	}
 	return false, rows.Err()
+}
+
+func pending(data []byte) bool {
+	var draft struct {
+		Pending bool `json:"pending"`
+	}
+	return json.Unmarshal(data, &draft) == nil && draft.Pending
+}
+
+// SentDraft is a pending draft revision. The message editor saves one before it writes
+// a message to the terminal. Next holds the draft revision after it, or nil.
+type SentDraft struct {
+	Seq     int64
+	Created string
+	Data    []byte
+	Next    []byte
+}
+
+// SentDrafts returns up to limit pending draft revisions older than revision before,
+// newest first. A before value of zero starts at the latest revision. More reports
+// that older pending revisions exist.
+func (s *Store) SentDrafts(sid string, before int64, limit int) (sent []SentDraft, more bool, err error) {
+	if before <= 0 {
+		before = math.MaxInt64
+	}
+	// The store uses one connection. Read the first next revision before the scan.
+	var next []byte
+	err = s.db.QueryRow("SELECT data FROM events WHERE session_id=? AND kind='draft' AND seq>=? ORDER BY seq LIMIT 1", sid, before).Scan(&next)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, err
+	}
+	rows, err := s.db.Query("SELECT seq,created,data FROM events WHERE session_id=? AND kind='draft' AND seq<? ORDER BY seq DESC", sid, before)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		draft := SentDraft{Next: next}
+		if err = rows.Scan(&draft.Seq, &draft.Created, &draft.Data); err != nil {
+			return nil, false, err
+		}
+		if pending(draft.Data) {
+			if len(sent) == limit {
+				return sent, true, nil
+			}
+			sent = append(sent, draft)
+		}
+		next = draft.Data
+	}
+	return sent, false, rows.Err()
 }
 
 // Verify attachment scope on every read, including draft references.
