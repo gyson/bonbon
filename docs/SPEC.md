@@ -6,7 +6,7 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 
 ## Architecture and build
 
-- Go 1.27.1+ core with `github.com/creack/pty` and `golang.org/x/sys`. Only synthetic
+- Go 1.27.3+ core with `github.com/creack/pty` and `golang.org/x/sys`. Only synthetic
   test agents use `golang.org/x/term`.
 - SQLite through the pure Go `github.com/ncruces/go-sqlite3` driver. No CGO in
   deployment builds.

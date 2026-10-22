@@ -74,7 +74,7 @@ and APIs may still change, but durable data needs a supported migration path.
 - Inspect the current repository and working-tree changes before editing. Preserve
   unrelated work.
 
-The core requires Go 1.27.1+ and the pure Go SQLite driver
+The core requires Go 1.27.3+ and the pure Go SQLite driver
 `github.com/ncruces/go-sqlite3`. The product has a separate background server and
 embedded web UI. The server owns agent pseudo-terminals (PTYs), headless terminal state,
 and history. The UI uses JSON over WebSocket. HTTP also serves the UI and its connection
@@ -82,7 +82,7 @@ information. The CLI only opens the UI, manages the server, and queries history.
 
 Keep deployment builds compatible with `CGO_ENABLED=0`.
 
-- Prefer simple, standard tools. Builds require Go 1.27.1+, Node.js 22+, and npm. The
+- Prefer simple, standard tools. Builds require Go 1.27.3+, Node.js 22+, and npm. The
   resulting binary is self-contained.
 - Keep frontend sources under `web/`, with strict TypeScript and CSS in `web/src`. Run
   `npm --prefix web ci --ignore-scripts` for setup. `make build` and `make release`

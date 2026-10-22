@@ -44,7 +44,7 @@ only replaces the executable and leaves the database alone.
 
 ## Build and run
 
-Builds require Go 1.27.1+, Node.js 22+, and npm. The binary includes the web UI and
+Builds require Go 1.27.3+, Node.js 22+, and npm. The binary includes the web UI and
 terminal libraries. It does not need Node.js or Go to run. To use an agent, install its
 CLI on PATH and sign in normally. Start the server before using `ui` or `query`.
 
@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/17`.
+This version uses protocol `bonbon/17`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -470,9 +470,9 @@ npm --prefix web ci --ignore-scripts
 make test
 make check
 make web-check
-make release VERSION=0.0.2
-sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.2
-make release-assets VERSION=0.0.2
+make release VERSION=0.0.3
+sh scripts/smoke-release.sh "$PWD/bin/release/bonbon" 0.0.3
+make release-assets VERSION=0.0.3
 ```
 
 `make release` without `VERSION` reports `dev`. A release tag supplies `X.Y.Z`.
