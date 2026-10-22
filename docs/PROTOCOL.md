@@ -163,8 +163,10 @@ composer operations, and read-only SQL can still access archived data.
 
 `session-list` orders by the latest `start`, `run`, `input`, `output`, or interruption
 `notice` event, newest first, falling back to session creation time. `updated` carries
-that timestamp. Event sequence determines the order when timestamps are equal. View
-changes, drafts, attachments, terminal replies, and saved screens do not affect order.
+that timestamp. Timestamps compare in whole milliseconds. Event sequence determines the
+order when timestamps are equal. Creation order, newest first, breaks remaining ties.
+View changes, drafts, attachments, terminal replies, and saved screens do not affect
+order.
 Reattaching at the same dimensions does not resize the PTY or request an application
 redraw.
 

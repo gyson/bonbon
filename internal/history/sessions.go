@@ -20,6 +20,8 @@ type SessionFilter struct {
 
 // ListSessions orders sessions by terminal input, output, and run lifecycle activity.
 // This includes output while detached. View changes and unsent drafts do not count.
+// SQLite compares these times in whole milliseconds. For equal times, the event sequence
+// and then the creation order decide. The rowid keeps the creation order.
 // Search and archive filters apply before pagination, including to old sessions.
 func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
 	if filter.Limit == 0 {
@@ -39,7 +41,7 @@ func (s *Store) ListSessions(filter SessionFilter) ([]ListedSession, error) {
             OR instr(lower(workspace),lower(?))>0 OR instr(lower(sessions.id),lower(?))>0
             OR EXISTS (SELECT 1 FROM projects WHERE projects.id=project_id
                 AND (instr(lower(projects.name),lower(?))>0 OR instr(lower(projects.workspace),lower(?))>0)))
-        ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.id
+        ORDER BY julianday(updated) DESC,COALESCE(activity.seq,0) DESC,sessions.rowid DESC
         LIMIT ? OFFSET ?`, filter.Archived, query, query, query, query, query, query, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, err

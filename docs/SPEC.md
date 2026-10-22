@@ -586,11 +586,15 @@ follows the latest terminal input, output, or run lifecycle event (`start`, `run
 interruption `notice`), newest first. Sessions without these events use their creation
 time.
 
-Event sequence determines the order when timestamps are equal. Viewing, resizing,
-renaming, saving drafts, attachments, terminal replies, and saved screens do not change
-recency. Fresh application output still counts, including output while detached or after
-a real size change. Summaries contain ID, title, project ID (empty for standalone),
-workspace, update time, status, archive flag, and view count.
+Timestamps compare in whole milliseconds. For equal timestamps, the higher event
+sequence comes first. Sessions without these events sort after sessions with them.
+Remaining ties use creation order, newest first. The order is deterministic, so offset
+pages do not overlap while the list is unchanged.
+
+Viewing, resizing, renaming, saving drafts, attachments, terminal replies, and saved
+screens do not change recency. Fresh application output still counts, including output
+while detached or after a real size change. Summaries contain ID, title, project ID
+(empty for standalone), workspace, update time, status, archive flag, and view count.
 
 Statuses include `draft`, `creating`, `launched`, `starting`, `running`, `exited`,
 `stopped`, `failed`, and `interrupted`. A running process does not imply model activity
@@ -784,9 +788,10 @@ interrupted runs without input replay.
 
 Activity fixtures check stable ordering across same-size reattachment and control
 transfer, real PTY resize notifications, and promotion by detached output. History tests
-exclude drafts and display events from recency and its timestamp tie-break. Server tests
-cover start/stop/restart, instance isolation, stale or tampered metadata, protocol
-checks, idle peers, and shutdown with stalled views.
+exclude drafts and display events from recency and its timestamp tie-break. They also
+check creation order for equal timestamps. Server tests cover start/stop/restart,
+instance isolation, stale or tampered metadata, protocol checks, idle peers, and
+shutdown with stalled views.
 
 Frame fixtures cover independent viewport sizes, explicit control transfer, blocked
 viewer input, receipt routing, slow views, final-frame ordering, and ended-screen
