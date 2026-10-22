@@ -1,6 +1,7 @@
 package history
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -81,4 +82,34 @@ func TestRecentSessionsUseTerminalActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertRecent(newer.ID, activity)
+}
+
+// Sessions with equal times keep their creation order, newest first. Session IDs are
+// random, so they cannot give a stable order.
+func TestEqualSessionTimesUseCreationOrder(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var ids []string
+	for i := range 20 {
+		session, err := store.CreateSession(fmt.Sprintf("Session %d", i), "/tmp", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, session.ID)
+	}
+	if _, err = store.db.Exec("UPDATE sessions SET created='2026-01-01T00:00:00Z'"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.ListSessions(SessionFilter{Limit: 100})
+	if err != nil || len(items) != len(ids) {
+		t.Fatal(items, err)
+	}
+	for i, item := range items {
+		if want := ids[len(ids)-1-i]; item.ID != want {
+			t.Fatalf("position %d = %s; want %s", i, item.ID, want)
+		}
+	}
 }
