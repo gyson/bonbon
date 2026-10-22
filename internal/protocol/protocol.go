@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/15"
+const Version = "bonbon/16"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -81,9 +81,13 @@ type Attachment struct {
 	Path      string `json:"path"`
 }
 
+// Composer holds a whole draft and its attachment metadata. Rejected is set only in a
+// save reply. It reports that the server kept a send from another view and did not
+// store the save. The reply then holds the latest draft.
 type Composer struct {
 	Draft       Draft        `json:"draft"`
 	Attachments []Attachment `json:"attachments"`
+	Rejected    bool         `json:"rejected,omitempty"`
 }
 
 type SessionInfo struct {
@@ -111,22 +115,22 @@ type ServerInfo struct {
 // Message carries one request, reply, or terminal event. Set only the fields that its
 // Type needs. Input bytes and rendered frames use base64 in JSON.
 type Message struct {
-	Type        string          `json:"type"`
-	Revision    int64           `json:"revision,omitempty"`
-	Full        bool            `json:"full,omitempty"`
-	ID          string          `json:"id,omitempty"`
-	Request     *Request        `json:"request,omitempty"`
-	Server      *ServerInfo     `json:"server,omitempty"`
-	Session     string          `json:"session,omitempty"`
-	Active      bool            `json:"active,omitempty"`
-	Status      string          `json:"status,omitempty"`
-	Data        []byte          `json:"data,omitempty"`
-	Size        Size            `json:"size,omitempty"`
-	Signal      int             `json:"signal,omitempty"`
-	Code        int             `json:"code,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	Controlling bool            `json:"controlling,omitempty"`
-	Result      json.RawMessage `json:"result,omitempty"`
+	Type     string          `json:"type"`
+	Revision int64           `json:"revision,omitempty"`
+	Full     bool            `json:"full,omitempty"`
+	ID       string          `json:"id,omitempty"`
+	Request  *Request        `json:"request,omitempty"`
+	Server   *ServerInfo     `json:"server,omitempty"`
+	Session  string          `json:"session,omitempty"`
+	Active   bool            `json:"active,omitempty"`
+	Status   string          `json:"status,omitempty"`
+	Data     []byte          `json:"data,omitempty"`
+	Size     Size            `json:"size,omitempty"`
+	Signal   int             `json:"signal,omitempty"`
+	Code     int             `json:"code,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	Composer *Composer       `json:"composer,omitempty"`
+	Result   json.RawMessage `json:"result,omitempty"`
 }
 
 type Conn struct {

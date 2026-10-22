@@ -110,7 +110,8 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   an optional worktree. Click Start session. Edit startup commands only in Settings.
 - A closed tab leaves its view. The session and history capture continue. Use the UI's
   Stop session action to stop work. Archive hides drafts or finished sessions. Archived
-  lets users find and restore them. Each session has one saved message editor.
+  lets users find and restore them. Each session has one saved message editor. All views
+  of a session show its latest saved draft.
 - Use `./bin/bonbon ui` to open the running instance's home page in the default browser.
   It uses the same instance selection and server verification as other clients.
 - On macOS, server start also launches a menu companion from the same executable. Keep
@@ -149,8 +150,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
 
 ## Product priorities
 
-- Treat browser tabs as equal views. Allow multiple viewers and one explicit controller
-  for input and PTY size. Closing a view never stops the session.
+- Treat browser tabs as equal views. Every view can send input. Do not add a controller
+  role. The PTY uses the size of the view that most recently sent input. Closing a view
+  never stops the session.
 - Keep source terminal parsing and query replies in the server. Clients receive rendered
   frames and acknowledge them. Keep the lossless recording separate from display
   updates.

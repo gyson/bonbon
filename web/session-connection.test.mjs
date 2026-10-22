@@ -38,7 +38,6 @@ function fixture(t, request = resume) {
   const attach = socket => {
     greet(socket);
     socket.receive({ type: 'session', session: 'one', active: true });
-    socket.receive({ type: 'control', controlling: true });
     socket.receive({ type: 'frame', revision: 1, full: true, size });
   };
   return { connection, sockets, frames, errors, greet, attach };

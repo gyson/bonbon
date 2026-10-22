@@ -312,12 +312,9 @@ func TestServerStopClosesIdleAndStalledClients(t *testing.T) {
 	if err := stalled.WriteJSON(protocol.Message{Type: "request", Request: &request}); err != nil {
 		t.Fatal(err)
 	}
-	var session, role, frame protocol.Message
+	var session, frame protocol.Message
 	if err := stalled.ReadJSON(&session); err != nil || session.Type != "session" {
 		t.Fatalf("stalled session: %+v %v", session, err)
-	}
-	if err := stalled.ReadJSON(&role); err != nil || role.Type != "control" || !role.Controlling {
-		t.Fatalf("control: %+v %v", role, err)
 	}
 	if err := stalled.ReadJSON(&frame); err != nil || frame.Type != "frame" {
 		t.Fatalf("stalled frame: %+v %v", frame, err)
@@ -340,17 +337,11 @@ func TestServerStopClosesIdleAndStalledClients(t *testing.T) {
 		t.Fatal("WebSocket connection was not closed", err)
 	}
 	stalled.SetReadDeadline(time.Now().Add(time.Second))
-	for {
-		var m protocol.Message
-		if err = stalled.ReadJSON(&m); err != nil {
-			if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
-				t.Fatal("stalled stream was not closed", err)
-			}
-			break
-		}
-		if m.Type != "control" || m.Controlling {
-			t.Fatalf("unexpected stalled stream event: %+v", m)
-		}
+	var m protocol.Message
+	if err = stalled.ReadJSON(&m); err == nil {
+		t.Fatalf("unexpected stalled stream event: %+v", m)
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("stalled stream was not closed", err)
 	}
 	saved, err := archive(t, directory).Session(session.Session)
 	if err != nil || saved.Run == nil || saved.Run.Status != "stopped" {

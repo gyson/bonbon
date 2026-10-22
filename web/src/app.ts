@@ -49,7 +49,6 @@ const elements = {
   'rename-submit': element('rename-submit', HTMLButtonElement),
   'cancel-rename': element('cancel-rename', HTMLButtonElement),
   'notice': element('notice', HTMLElement),
-  'take-control': element('take-control', HTMLButtonElement),
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
   'sessions': element('sessions', HTMLElement),
@@ -153,10 +152,8 @@ function controls() {
   if (!showingSettings && selected?.status === 'draft') $('status').textContent = selected.archived ? 'Draft · Archived' : 'Draft';
   $('settings-open').disabled = busy || !server;
   $('settings-close').disabled = busy;
-  composer.controls(busy, !!connection?.ready && !!connection.peer?.active && connection.peer.controlling);
+  composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
-  $('take-control').hidden = !connection?.peer?.active || connection.peer.controlling;
-  $('take-control').disabled = busy || !connection?.ready;
   $('stop').disabled = busy || showingSettings || !selected || !['running', 'starting'].includes(selected.status);
   $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active;
   $('reconnect').textContent = ['running', 'starting'].includes(selected?.status ?? '') ? 'Reconnect' : 'Reload output';
@@ -359,14 +356,14 @@ function makeTerminal(): Terminal {
   fit.fit();
   $('dimensions').textContent = `${terminal.cols} × ${terminal.rows}`;
   terminal.onData(data => {
-    if (!connection?.ready || !connection?.peer?.controlling) return;
+    if (!connection?.ready || !connection.peer?.active) return;
     const bytes = new TextEncoder().encode(data);
     for (let start = 0; start < bytes.length; start += 16384) {
       if (!connection?.peer?.send({ type: 'input', data: encodeBytes(bytes.subarray(start, start + 16384)) })) break;
     }
   });
   terminal.onBinary(data => {
-    if (connection?.ready && connection.peer?.controlling) connection.peer.send({ type: 'input', data: btoa(data) });
+    if (connection?.ready && connection.peer?.active) connection.peer.send({ type: 'input', data: btoa(data) });
   });
   terminal.onResize(({ rows, cols }) => {
     $('dimensions').textContent = `${cols} × ${rows}`;
@@ -380,16 +377,6 @@ async function leaveView() {
   connection?.close();
   connection = null;
   if (terminal) terminal.options.disableStdin = true;
-}
-
-function showRole() {
-  if (!terminal || !connection?.peer?.active) return;
-  terminal.options.disableStdin = !connection?.ready || !connection.peer.controlling;
-  $('status').textContent = connection.peer.controlling ? 'Controlling' : 'Viewing';
-  $('terminal-hint').textContent = connection.peer.controlling ?
-    'Click the terminal to type. Ctrl+C reaches the application.' :
-    'Viewing this session. Take control to type; other views will keep watching.';
-  controls();
 }
 
 async function openSession(session: SessionView, start = false): Promise<void> {
@@ -445,9 +432,8 @@ async function openSession(session: SessionView, start = false): Promise<void> {
     size: () => size(view),
     ready() {
       clearNotice('stream');
-      view.options.disableStdin = !connection?.peer?.active || !connection.peer.controlling;
-      $('status').textContent = selected?.status ?? 'ended';
-      showRole();
+      view.options.disableStdin = !connection?.peer?.active;
+      $('status').textContent = connection?.peer?.active ? 'Running' : (selected?.status ?? 'ended');
       requestFit();
       controls();
     },
@@ -466,7 +452,6 @@ async function openSession(session: SessionView, start = false): Promise<void> {
           refreshSessions();
           view.focus();
           break;
-        case 'control': showRole(); break;
         case 'exit':
           selected.status = 'exited';
           view.options.disableStdin = true;
@@ -653,10 +638,6 @@ async function initialize() {
     refreshGeneration++;
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
-  };
-  $('take-control').onclick = () => {
-    if (!terminal || !connection?.ready) return;
-    connection?.peer?.send({ type: 'take-control', size: boundedSize(fit?.proposeDimensions() ?? terminal) });
   };
   $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); });
   $('stop').onclick = () => action(async () => {

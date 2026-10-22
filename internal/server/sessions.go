@@ -19,19 +19,19 @@ import (
 // The server owns the active session. Attachments are replaceable views. Their
 // cancellation must never cancel the process or recording.
 type runningSession struct {
-	id         string
-	controls   chan agent.Control
-	cancel     context.CancelFunc
-	done       chan struct{}
-	mu         sync.Mutex
-	clients    map[*attachment]struct{}
-	controller *attachment
-	controlMu  sync.Mutex // Orders accepted input, size changes, and control transfers.
-	terminal   *terminal.State
-	revision   int64
-	runID      string
-	ended      bool
-	exit       protocol.Message
+	id        string
+	controls  chan agent.Control
+	cancel    context.CancelFunc
+	done      chan struct{}
+	mu        sync.Mutex
+	clients   map[*attachment]struct{}
+	sizeOwner *attachment // The PTY uses this view's size.
+	controlMu sync.Mutex  // Orders accepted controls and size owner changes.
+	terminal  *terminal.State
+	revision  int64
+	runID     string
+	ended     bool
+	exit      protocol.Message
 }
 
 type attachment struct {
@@ -40,7 +40,7 @@ type attachment struct {
 	changed  chan struct{}         // Combines render requests. Excludes PTY events.
 	closed   chan struct{}
 	once     sync.Once
-	size     protocol.Size // Stores the viewport. Only the controller resizes the PTY.
+	size     protocol.Size // Stores the viewport. Only the size owner resizes the PTY.
 }
 
 func (a *attachment) close() { a.once.Do(func() { close(a.closed); a.conn.Close() }) }
@@ -59,8 +59,8 @@ func (r *runningSession) subscribe(conn *protocol.Conn, size protocol.Size) *att
 		r.clients = make(map[*attachment]struct{})
 	}
 	r.clients[a] = struct{}{}
-	if r.controller == nil && !r.ended {
-		r.controller = a
+	if r.sizeOwner == nil && !r.ended {
+		r.sizeOwner = a
 	}
 	a.wake()
 	return a
@@ -71,8 +71,8 @@ func (r *runningSession) leave(a *attachment) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.clients, a)
-	if r.controller == a {
-		r.controller = nil
+	if r.sizeOwner == a {
+		r.sizeOwner = nil
 	}
 }
 func (a *attachment) inputAck(id string, err error) {
@@ -88,8 +88,11 @@ func (a *attachment) inputAck(id string, err error) {
 	}
 }
 
-// Serialize accepted controls before a change of controller. Accepted input may finish
-// during the transfer. Its receipt always belongs to the original view.
+// Every view can send input and signals. The PTY uses the size of the view that most
+// recently sent input. When no view has the size, a view that sends its size takes it.
+// Signals never change the size owner. Serialize accepted controls so that a size
+// change always reaches the PTY before the input that caused it. Input receipts always
+// go to the view that sent the input.
 func (r *runningSession) control(a *attachment, message protocol.Message) {
 	r.controlMu.Lock()
 	defer r.controlMu.Unlock()
@@ -99,34 +102,35 @@ func (r *runningSession) control(a *attachment, message protocol.Message) {
 		r.mu.Unlock()
 		return
 	}
-	if message.Type == "take-control" {
-		r.controller = a
-		for client := range r.clients {
-			client.wake()
-		}
-		message.Type = "resize"
-	}
 	if message.Type == "resize" {
 		a.size = message.Size
 		r.revision++
 		a.wake()
 	}
-	allowed := r.controller == a
-	r.mu.Unlock()
-	if !allowed {
-		if message.Type == "input" && message.ID != "" {
-			a.inputAck(message.ID, errors.New("this view does not control the session; input was not sent"))
+	var controls []agent.Control
+	if r.sizeOwner != a && (message.Type == "input" || (message.Type == "resize" && r.sizeOwner == nil)) {
+		r.sizeOwner = a
+		if message.Type == "input" {
+			// The runtime ignores a resize to the current PTY size.
+			controls = append(controls, agent.Control{Message: protocol.Message{Type: "resize", Size: a.size}})
 		}
-		return
 	}
-	control := agent.Control{Message: message}
-	if message.Type == "input" && message.ID != "" {
-		control.Ack = func(err error) { a.inputAck(message.ID, err) }
+	if message.Type != "resize" || r.sizeOwner == a {
+		control := agent.Control{Message: message}
+		if message.Type == "input" && message.ID != "" {
+			control.Ack = func(err error) { a.inputAck(message.ID, err) }
+		}
+		controls = append(controls, control)
 	}
-	select {
-	case r.controls <- control:
-	case <-r.done:
-	case <-a.closed:
+	r.mu.Unlock()
+	for _, control := range controls {
+		select {
+		case r.controls <- control:
+		case <-r.done:
+			return
+		case <-a.closed:
+			return
+		}
 	}
 }
 func (r *runningSession) publish(event history.Event) ([]byte, error) {
@@ -150,7 +154,7 @@ func (r *runningSession) finish(code int, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ended = true
-	r.controller = nil
+	r.sizeOwner = nil
 	r.revision++
 	r.exit = protocol.Message{Type: "exit", Code: code}
 	if err != nil {
@@ -313,18 +317,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 	var sent, acked int64
 	var sentAt time.Time
 	dirty := true
-	roleSent, controlling := false, false
 	for {
-		r.mu.Lock()
-		nowControlling := r.controller == a
-		r.mu.Unlock()
-		if !roleSent || nowControlling != controlling {
-			if err := conn.Send(protocol.Message{Type: "control", Controlling: nowControlling}); err != nil {
-				return
-			}
-			roleSent, controlling = true, nowControlling
-		}
-
 		if dirty && sent == acked && (previous == nil || time.Since(sentAt) >= 50*time.Millisecond) {
 			r.mu.Lock()
 			revision, ended, exit := r.revision, r.ended, r.exit
@@ -375,7 +368,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				if conn.Send(protocol.Message{Type: "pong"}) != nil {
 					return
 				}
-			case "input", "resize", "signal", "take-control":
+			case "input", "resize", "signal":
 				if acked == 0 {
 					s.reply(conn, nil, errors.New("terminal is not ready for input"))
 					return
@@ -383,7 +376,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 				if control.Type == "input" && len(control.ID) > 80 {
 					return
 				}
-				if (control.Type == "resize" || control.Type == "take-control") && !terminal.ValidSize(control.Size) {
+				if control.Type == "resize" && !terminal.ValidSize(control.Size) {
 					s.reply(conn, nil, errors.New("terminal size must be 2–512 columns and 1–256 rows"))
 					return
 				}

@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/15';
+export const VERSION = 'bonbon/16';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -42,7 +42,9 @@ export interface Draft {
   pending: boolean;
 }
 export interface Attachment { id: number; name: string; mediaType: string; size: number; path: string }
-export interface ComposerState { draft: Draft; attachments: Attachment[] }
+// A save reply sets rejected when the server kept a send from another view. The reply
+// then holds the latest draft.
+export interface ComposerState { draft: Draft; attachments: Attachment[]; rejected?: boolean }
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
@@ -62,17 +64,18 @@ type RPCRequest = ArchiveRequest | SettingsRequest | InspectRequest | PrepareReq
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   | { operation: 'session-resume'; session: string; size: Size };
-export type Request = RPCRequest | StreamRequest;
+export type DraftWatchRequest = { operation: 'composer-watch'; session: string };
+export type Request = RPCRequest | StreamRequest | DraftWatchRequest;
 
 export type ServerMessage =
   | { type: 'server'; server: ServerInfo }
   | { type: 'session'; session: string; active?: boolean; status?: string }
   | { type: 'frame'; data?: string; size: Size; revision: number; full?: boolean }
   | { type: 'pong' }
-  | { type: 'control'; controlling?: boolean }
   | { type: 'input-ack'; id: string; error?: string }
   | { type: 'exit'; code?: number; error?: string }
   | { type: 'history-end' }
+  | { type: 'draft'; session: string; composer: ComposerState }
   | { type: 'result'; result: unknown }
   | { type: 'error'; error: string };
 
@@ -80,7 +83,6 @@ export type Control =
   | { type: 'input'; data: string; id?: string }
   | { type: 'resize'; size: Size }
   | { type: 'signal'; signal: number }
-  | { type: 'take-control'; size: Size }
   | { type: 'ping' };
 
 interface Handlers {
@@ -116,7 +118,6 @@ export class ConnectionError extends Error {
 export class Peer {
   readonly socket: Socket;
   active = false;
-  controlling = false;
   private finished = false;
   private heartbeat: ReturnType<typeof setInterval>;
   private receivedAt = Date.now();
@@ -159,14 +160,15 @@ export class Peer {
           this.fail(message.error || 'Request failed.');
           return;
         }
+        // A live session or a draft watch keeps the connection open with ping.
         if (message.type === 'session') this.active = !!message.active;
-        if (message.type === 'control') this.controlling = !!message.controlling;
+        if (message.type === 'draft') this.active = true;
         if (message.type === 'input-ack' && message.id === this.input?.id) this.input.settle(message.error);
         if (['exit', 'history-end', 'result'].includes(message.type)) {
           this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');
           this.finished = true;
           clearInterval(this.heartbeat);
-          this.active = this.controlling = false;
+          this.active = false;
         }
         this.handlers.message?.(message);
       } catch (error) {
@@ -176,7 +178,7 @@ export class Peer {
     this.socket.onerror = () => this.fail('Connection failed. Input was not resent.', true);
     this.socket.onclose = () => {
       clearTimeout(this.timer);
-      this.active = this.controlling = false;
+      this.active = false;
       if (!this.finished) {
         this.fail('Connection lost. Work may still be running. Input was not resent.', true);
       }
@@ -188,7 +190,7 @@ export class Peer {
     if (this.finished) return;
     this.finished = true;
     clearInterval(this.heartbeat);
-    this.active = this.controlling = false;
+    this.active = false;
     clearTimeout(this.timer);
     this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');
     this.handlers.error?.(new ConnectionError(message, retryable));
@@ -197,7 +199,6 @@ export class Peer {
 
   send(message: Control): boolean {
     if (!this.active || this.socket.readyState !== 1) return false;
-    if (['input', 'signal'].includes(message.type) && !this.controlling) return false;
     if (this.socket.bufferedAmount > 1024 * 1024) {
       this.fail('Connection is too slow. Some input may have been delivered; reconnect before continuing.');
       return false;
@@ -226,7 +227,7 @@ export class Peer {
         if (error) reject(new Error(error)); else resolve();
       } };
       try {
-        if (!this.send({ type: 'input', id, data })) this.input?.settle('This view does not control the terminal. Input was not sent.');
+        if (!this.send({ type: 'input', id, data })) this.input?.settle('The terminal is not connected. Input was not sent.');
       } catch (error) { this.input?.settle(errorMessage(error)); }
     });
   }
@@ -235,7 +236,7 @@ export class Peer {
     this.input?.settle('Input delivery was not confirmed. Check the terminal before submitting again.');
     this.finished = true;
     clearInterval(this.heartbeat);
-    this.active = this.controlling = false;
+    this.active = false;
     clearTimeout(this.timer);
     this.socket.close();
   }

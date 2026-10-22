@@ -1,9 +1,18 @@
 import { element } from './dom.js';
+import { DraftWatch } from './draft-watch.js';
 import { call, encodeBytes, errorMessage } from './protocol.js';
-import type { Attachment, ComposerState, Peer, ServerInfo } from './protocol.js';
+import type { Attachment, ComposerState, Draft, Peer, ServerInfo } from './protocol.js';
 
 const encoder = new TextEncoder();
 const empty = (): ComposerState => ({ draft: { revision: 0, text: '', attachments: [], pending: false }, attachments: [] });
+const sentElsewhere = 'A message was sent from another view. Your last edit here was not saved.';
+
+// Decide whether a pushed draft replaces the draft in this view. The latest save wins,
+// so this view keeps its own unsaved edits. A pushed pending draft always applies,
+// because it records a send from another view.
+export function acceptPushed(local: { revision: number; dirty: boolean }, pushed: Draft): boolean {
+  return pushed.revision > local.revision && (!local.dirty || pushed.pending);
+}
 
 // This sends terminal paste through the PTY. It does not use a provider API. Do not
 // infer readiness from output.
@@ -47,6 +56,12 @@ export class Composer {
   private blocked = false;
   private active = false;
   private loaded = false;
+  private watch: DraftWatch | null = null;
+  private loading: (() => void) | undefined;
+  private remote: ComposerState | undefined; // The newest pushed draft not yet applied.
+  private generation = 0; // Changes when a draft from the server replaces this view's draft.
+  private sending = false;
+  private syncLost = false;
 
   constructor(private readonly host: Host) {
     this.text.oninput = () => {
@@ -97,6 +112,10 @@ export class Composer {
     this.status.classList.toggle('form-error', error);
   }
 
+  private savedMessage(): string {
+    return this.state.draft.pending ? 'Submission may have reached the terminal. Check it before editing and submitting again.' : 'Draft saved';
+  }
+
   private changed(): void {
     this.edits++;
     this.message('Saving draft…');
@@ -106,7 +125,9 @@ export class Composer {
   }
 
   // Serialize saves with the server revision from the previous save. Edits during an
-  // active save get another revision. Session changes wait for all saves.
+  // active save get another revision. Session changes wait for all saves. The server
+  // rejects a save only to keep a send from another view. This view then shows the
+  // latest draft.
   async flush(): Promise<void> {
     clearTimeout(this.timer);
     if (this.saving) {
@@ -121,22 +142,35 @@ export class Composer {
         const version = this.edits;
         const result = await call(server, { operation: 'composer-draft', session: this.session,
           draft: { ...this.state.draft, attachments: [...this.state.draft.attachments] } });
+        if (result.rejected) {
+          this.apply(result, sentElsewhere);
+          return;
+        }
         this.state.draft.revision = result.draft.revision;
         this.saved = version;
       }
-      this.message(this.state.draft.pending ? 'Submission may have reached the terminal. Check it before editing and submitting again.' : 'Draft saved');
+      this.message(this.savedMessage());
     })();
     try { await this.saving; }
     catch (error) { this.message(`Draft not saved: ${errorMessage(error)}`, true); throw error; }
-    finally { this.saving = undefined; }
+    finally {
+      this.saving = undefined;
+      this.reconcile();
+    }
   }
 
+  // Each selected session has one draft watch. The first pushed draft loads the editor.
   async select(session: string): Promise<void> {
     await this.flush();
+    this.finishLoading();
+    this.watch?.close();
+    this.watch = null;
     this.session = session;
-    this.loaded = false;
+    this.loaded = this.syncLost = false;
     this.state = empty();
+    this.remote = undefined;
     this.edits = this.saved = 0;
+    this.generation++;
     this.text.value = '';
     this.renderFiles();
     this.controls();
@@ -144,13 +178,69 @@ export class Composer {
     this.message('Loading draft…');
     const server = this.host.server();
     if (!server) return;
-    try {
-      this.state = await call(server, { operation: 'composer-draft', session });
-      this.loaded = true;
-      this.text.value = this.state.draft.text;
-      this.renderFiles();
-      this.message(this.state.draft.pending ? 'Submission may have reached the terminal. Check it before editing and submitting again.' : 'Draft saved');
-    } catch (error) { this.message(`Cannot load draft: ${errorMessage(error)}`, true); }
+    await new Promise<void>(resolve => {
+      this.loading = resolve;
+      this.watch = new DraftWatch(server, session, {
+        draft: state => {
+          this.receive(state);
+          this.finishLoading();
+        },
+        failed: (error, retrying) => {
+          this.syncLost = true;
+          if (!this.loaded) this.message(`Cannot load draft: ${errorMessage(error)}`, true);
+          else if (retrying) this.message('Draft sync paused. Reconnecting…', true);
+          else this.message(`Draft sync stopped: ${errorMessage(error)}`, true);
+          this.finishLoading();
+          this.controls();
+        },
+      });
+    });
+  }
+
+  private finishLoading(): void {
+    this.loading?.();
+    this.loading = undefined;
+  }
+
+  private receive(next: ComposerState): void {
+    if (this.syncLost) {
+      this.syncLost = false;
+      if (this.loaded && !this.saving && this.edits === this.saved) this.message(this.savedMessage());
+    }
+    if (!this.loaded) { this.apply(next); return; }
+    if (next.draft.revision <= this.state.draft.revision) return;
+    if (!this.remote || next.draft.revision > this.remote.draft.revision) this.remote = next;
+    this.reconcile();
+  }
+
+  // Wait for an active save. Its reply decides which draft is newer.
+  private reconcile(): void {
+    const next = this.remote;
+    if (!next || this.saving) return;
+    if (next.draft.revision <= this.state.draft.revision) { this.remote = undefined; return; }
+    const dirty = this.sending || this.edits !== this.saved;
+    if (!acceptPushed({ revision: this.state.draft.revision, dirty }, next.draft)) return;
+    this.apply(next, dirty ? sentElsewhere : undefined);
+  }
+
+  // Replace the whole draft with a draft from the server. Keep the cursor position when
+  // this view has focus.
+  private apply(next: ComposerState, note?: string): void {
+    this.generation++;
+    clearTimeout(this.timer);
+    this.remote = undefined;
+    const focused = document.activeElement === this.text;
+    const { selectionStart, selectionEnd } = this.text;
+    this.state = { draft: next.draft, attachments: next.attachments };
+    this.saved = this.edits;
+    this.loaded = true;
+    if (this.text.value !== next.draft.text) {
+      this.text.value = next.draft.text;
+      const length = next.draft.text.length;
+      if (focused) this.text.setSelectionRange(Math.min(selectionStart, length), Math.min(selectionEnd, length));
+    }
+    this.renderFiles();
+    this.message(note ?? this.savedMessage(), !!note);
     this.controls();
   }
 
@@ -200,18 +290,27 @@ export class Composer {
     });
   }
 
+  // Stop when a draft from another view replaces this draft during the send.
   private async send(): Promise<void> {
     const peer = this.host.peer();
     if (!this.loaded || !this.active || !peer?.active || this.state.draft.pending) return;
+    const generation = this.generation;
+    this.sending = true;
     try {
       await this.flush();
+      if (generation !== this.generation) return;
       const input = composeInput(this.state.draft.text, this.state.attachments, this.host.bracketed());
       // Save the uncertainty marker before any bytes leave this browser.
       this.state.draft.pending = true;
       this.changed();
       await this.flush();
+      if (generation !== this.generation) return;
       this.message('Submitting to terminal…');
       await peer.writeInput(encodeBytes(encoder.encode(input)));
+      if (generation !== this.generation) {
+        this.message('Submitted to terminal. Another view changed the draft, so this view did not clear it.', true);
+        return;
+      }
       this.state.draft.text = '';
       this.state.draft.attachments = [];
       this.state.draft.pending = false;
@@ -222,5 +321,9 @@ export class Composer {
       await this.flush();
       this.message('Submitted to terminal');
     } catch (error) { this.message(errorMessage(error), true); }
+    finally {
+      this.sending = false;
+      this.reconcile();
+    }
   }
 }

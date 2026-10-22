@@ -565,6 +565,44 @@ func TestViewReconnectKeepsProcessAndBackgroundRecording(t *testing.T) {
 	stopTestSession(t, id) // Repeated stop is safe after normal exit.
 }
 
+func TestInputFromAnyViewMovesPTYSize(t *testing.T) {
+	dataDir := t.TempDir()
+	startTestServer(t, dataDir)
+	first := launchAgent(t, t.TempDir(), "activity", filepath.Join(t.TempDir(), "unused"))
+	waitFor(t, func() bool { return strings.Contains(first.text(), "READY") })
+	store := archive(t, dataDir)
+	id := sessionInfos(t, 1)[0].ID
+	second := openSessionView(t, protocol.Request{Operation: "session-resume", Session: id, Size: protocol.Size{Rows: 30, Cols: 100}})
+	waitFor(t, func() bool { return strings.Contains(second.text(), "READY") })
+	// Allow any accidental SIGWINCH output. A new view must not move the PTY size.
+	time.Sleep(250 * time.Millisecond)
+	if output := recordedOutput(t, store, id); strings.Contains(output, "RESIZED=") {
+		t.Fatalf("a new view resized the PTY: %q", output)
+	}
+	if _, err := second.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(recordedOutput(t, store, id), "RESIZED=30x100") })
+	if _, err := first.Write([]byte("y")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return strings.Contains(recordedOutput(t, store, id), "RESIZED=24x80") })
+	events, err := recordedEvents(t, store, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input []byte
+	for _, event := range events {
+		if event.Kind == "input" {
+			input = append(input, event.Data...)
+		}
+	}
+	if !bytes.Equal(input, append(first.launchInput, 'x', 'y')) {
+		t.Fatalf("input from both views was not recorded in order: %q", input)
+	}
+	stopTestSession(t, id)
+}
+
 func TestDefaultShellAndStopForegroundJob(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("SHELL", "")
