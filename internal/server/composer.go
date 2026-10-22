@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -61,11 +64,122 @@ func (s *Server) composer(sid string, draft *protocol.Draft) (protocol.Composer,
 			return result, err
 		}
 		result.Draft.Revision, err = s.store.SaveDraft(sid, draft.Revision, data)
+		if errors.Is(err, history.ErrDraftSent) {
+			latest, err := s.composer(sid, nil)
+			latest.Rejected = true
+			return latest, err
+		}
 		if err != nil {
 			return result, err
 		}
+		s.publishDraft(sid, result)
 	}
 	return result, nil
+}
+
+// A draft watcher keeps only the newest draft. A slow view never queues old revisions.
+type draftWatcher struct {
+	mu      sync.Mutex
+	latest  protocol.Composer
+	changed chan struct{}
+}
+
+func (w *draftWatcher) offer(state protocol.Composer) {
+	w.mu.Lock()
+	if state.Draft.Revision > w.latest.Draft.Revision {
+		w.latest = state
+	}
+	w.mu.Unlock()
+	select {
+	case w.changed <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) publishDraft(sid string, state protocol.Composer) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	for w := range s.watchers[sid] {
+		w.offer(state)
+	}
+}
+
+// watchComposer sends the latest draft of a session, then each newer saved draft. The
+// view must send ping at least every 30 seconds. Closing the view only removes the
+// watcher.
+func (s *Server) watchComposer(ctx context.Context, conn *protocol.Conn, sid string) {
+	// A draft that was never saved has revision 0. Start below it.
+	w := &draftWatcher{latest: protocol.Composer{Draft: protocol.Draft{Revision: -1}}, changed: make(chan struct{}, 1)}
+	s.watchMu.Lock()
+	if s.watchers == nil {
+		s.watchers = make(map[string]map[*draftWatcher]struct{})
+	}
+	if s.watchers[sid] == nil {
+		s.watchers[sid] = make(map[*draftWatcher]struct{})
+	}
+	s.watchers[sid][w] = struct{}{}
+	s.watchMu.Unlock()
+	defer func() {
+		s.watchMu.Lock()
+		delete(s.watchers[sid], w)
+		if len(s.watchers[sid]) == 0 {
+			delete(s.watchers, sid)
+		}
+		s.watchMu.Unlock()
+	}()
+	// Register before the first read. Then a save during the read is never missed.
+	state, err := s.composer(sid, nil)
+	if err != nil {
+		s.reply(conn, nil, err)
+		return
+	}
+	w.offer(state)
+	incoming := make(chan protocol.Message)
+	readerDone := make(chan struct{})
+	closed := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		for {
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			message, err := conn.Receive()
+			if err != nil {
+				return
+			}
+			select {
+			case incoming <- message:
+			case <-closed:
+				return
+			}
+		}
+	}()
+	defer func() { close(closed); conn.Close(); <-readerDone }()
+	sent := int64(-1)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-readerDone:
+			return
+		case <-w.changed:
+			w.mu.Lock()
+			next := w.latest
+			w.mu.Unlock()
+			if next.Draft.Revision > sent {
+				if conn.Send(protocol.Message{Type: "draft", Session: sid, Composer: &next}) != nil {
+					return
+				}
+				sent = next.Draft.Revision
+			}
+		case message := <-incoming:
+			if message.Type != "ping" {
+				s.reply(conn, nil, errors.New("unsupported draft watch message"))
+				return
+			}
+			if conn.Send(protocol.Message{Type: "pong"}) != nil {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) upload(sid string, upload *protocol.Upload) (protocol.Attachment, error) {

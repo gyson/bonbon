@@ -27,11 +27,9 @@ func TestSessionViewsDoNotChangeActivityOrder(t *testing.T) {
 	}
 	resumed := resumeView(t, firstID)
 	waitFor(t, func() bool { return strings.Contains(resumed.text(), "READY") })
-	// Both control transfer and an unchanged viewport must remain display-only.
-	for _, kind := range []string{"take-control", "resize"} {
-		if err := resumed.conn.Send(protocol.Message{Type: kind, Size: protocol.Size{Rows: 24, Cols: 80}}); err != nil {
-			t.Fatal(err)
-		}
+	// An unchanged viewport must remain display-only.
+	if err := resumed.conn.Send(protocol.Message{Type: "resize", Size: protocol.Size{Rows: 24, Cols: 80}}); err != nil {
+		t.Fatal(err)
 	}
 	// Allow the runtime to process controls and any accidental SIGWINCH output.
 	time.Sleep(250 * time.Millisecond)

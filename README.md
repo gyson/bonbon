@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/15`.
+This change uses protocol `bonbon/16`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -233,19 +233,18 @@ cleanup.
 
 The terminal supports keyboard input, paste, resizing, and the agent's own prompts.
 Switching sessions or closing a tab removes that view and leaves the process running.
-Multiple tabs can watch the same session. The badge shows **Controlling** or
-**Viewing**. Click **Take control** to transfer keyboard input and terminal sizing to
-this tab. Other views continue watching.
+Multiple tabs can show the same session. Every tab can type and send messages
+immediately. The terminal size follows the tab that most recently sent input. Other tabs
+keep their own view size.
 
-If the controller leaves, existing viewers keep watching until one takes control. **Stop
-session** ends the process for every viewer. Smaller views show the bottom of the
+**Stop session** ends the process for every view. Smaller views show the bottom of the
 terminal and put clipped top rows in scrollback. They clip columns beyond their width
 without application reflow.
 
 Refreshing a selected page resumes its session by ID. The browser reconnects after
-transport failures. Reconnecting does not steal control from another view. Input remains
-disabled until the current screen and control arrive. The browser never retries
-uncertain input or session creation. Switching sessions cancels pending browser
+transport failures. Reconnecting does not change the terminal size while another tab
+owns it. Input remains disabled until the current screen arrives. The browser never
+retries uncertain input or session creation. Switching sessions cancels pending browser
 reconnection.
 
 The Go server owns the terminal emulator as well as the PTY. It sends a current screen
@@ -276,7 +275,10 @@ existing text at the prompt. Multiline text and tabs require the CLI to enable b
 paste. Application handling still depends on that CLI.
 
 Drafts save per session through the server to SQLite, including across browser reloads
-and server restarts. The editor waits for saves before switching sessions. A failed or
+and server restarts. The editor waits for saves before switching sessions. All tabs that
+show a session share its draft. An edit in one tab appears in the other tabs about half a
+second after you stop typing. If you type in two tabs at the same time, the last save
+wins. A tab never replaces a message that another tab is sending. A failed or
 uncertain submission retains the draft and requires you to check the terminal before
 editing and submitting again. A receipt confirms terminal delivery. It does not confirm
 agent acceptance or completion. BonBon never resends input automatically.

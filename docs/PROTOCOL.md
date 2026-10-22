@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/15`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/16`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/15",
+    "protocol": "bonbon/16",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/15",
+    "protocol": "bonbon/16",
     "operation": "session-list",
     "limit": 10
   }
@@ -86,7 +86,8 @@ operations.
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
-| `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. |
+| `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
+| `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
 | `settings-get` | none | `result`, saved settings and revision |
@@ -133,6 +134,10 @@ Protocol 15 supports multiple drafts per project, archive/restore, and paginated
 collection search. Project records no longer contain a draftId. Session records and
 summaries include an archived boolean. SQLite format 6 stores this independent flag.
 Server startup upgrades formats 3–5 automatically using embedded migrations.
+
+Protocol 16 removes the controller role and the `control` and `take-control` messages.
+Every view can send input. It adds `composer-watch` and the latest-save rule for
+drafts. The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -208,33 +213,29 @@ repositories.
 
 After a session request, the server sends `session` with its ID and `active: true` for a
 live process. Ended replies instead include `status`. Multiple views share one process
-and emulator. A view takes control automatically only when there is no controller when
-it joins. Existing views never change control merely because another view leaves.
+and emulator. Every view can send `input` and `signal`. There is no controller role.
 
-A `control` message with `controlling` identifies this view's role, initially and after
-changes. `take-control` transfers ownership immediately and supplies the new
-controller's viewport size. No approval exchange or queue is involved.
+The PTY uses the viewport size of one view, the size owner. A view becomes the size owner
+when it joins and no view owns the size. A view also becomes the size owner when it sends
+`input`, or when it sends `resize` and no view owns the size. Before the server writes
+input from a new size owner, it resizes the PTY to the size of that view. `signal` does
+not change the size owner.
 
-Only the controller's `input` and `signal` reach the runtime. Input accepted before a
-transfer may finish. Its receipt always goes to the original view. Rejected viewer input
-with an `id` gets an error receipt.
-
-The server ignores viewer input without an ID. Closing the socket removes that view and
-releases its control. No process is stopped. Any view may use the separate
-`session-stop` operation to end work for everyone.
+An input receipt always goes to the view that sent the input. Closing the socket removes
+that view. The PTY keeps its size until another view becomes the size owner. No process
+is stopped. Any view may use the separate `session-stop` operation to end work for
+everyone.
 
 | Direction | Type | Contents and effect |
 | --- | --- | --- |
 | Client → server | `input` | Base64 `data`, recorded before PTY delivery. An optional `id` requests a receipt. |
-| Client → server | `resize` | This view's `size`. Only the controller also resizes the PTY. |
+| Client → server | `resize` | This view's `size`. Only the size owner also resizes the PTY. |
 | Client → server | `signal` | Numeric `signal`. The server accepts only SIGINT. |
-| Client → server | `take-control` | Transfer input and PTY sizing to this view, with `size` |
 | Client → server | `frame-ack` | `revision` of the frame that finished rendering |
 | Client → server | `ping` | Keep the attachment alive |
 | Server → client | `pong` | Reply to `ping` |
 | Server → client | `frame` | Base64 rendered ANSI in `data`, `size`, `revision`, and optional `full` |
 | Server → client | `input-ack` | Matching `id`. An optional `error` indicates uncertain delivery. |
-| Server → client | `control` | `controlling: true` for the controlling view, false or omitted for a viewer |
 | Server → client | `exit` | Exit `code` and optional `error`. Follows the final frame acknowledgment. |
 | Server → client | `history-end` | End of a read-only ended-session view |
 | Server → client | `error` | Error description in `error` |
@@ -267,7 +268,7 @@ form an output queue or interrupt capture.
 Frames are limited to 20 per second. Revisions increase within an attachment. A new
 attachment starts with a full frame and a fresh baseline. The server rejects stale,
 duplicate, or out-of-order acknowledgments. It accepts controls only after the first
-frame acknowledgment. Only the controller can send input and signals.
+frame acknowledgment.
 
 Control receipts use a separate bounded queue. Clients must acknowledge frames within 30
 seconds. Idle readers must send a message within 30 seconds. Clients send `ping` every
@@ -298,9 +299,21 @@ prevent duplicate input. Never resend input automatically. Reconnect uses
 
 `composer-draft` returns `{"draft": {...}, "attachments": [...]}`. A draft contains
 `revision` (event sequence, initially zero), `text`, `attachments` (attachment IDs), and
-`pending` (possible input delivery). To save, send the last revision with the new
-content. A stale revision fails without overwriting the current draft. A save returns
-its new revision. Omit the entire `draft` field to load the latest saved state.
+`pending` (possible input delivery). To save, send the whole draft with the revision
+that the view last loaded or saved. A save returns its new revision. Omit the entire
+`draft` field to load the latest saved state.
+
+The latest save wins, also when its revision is older than the current revision.
+Earlier revisions stay in the archive. One exception keeps sends safe. The server does
+not store a save from an older revision when that revision or a later one is pending.
+The reply then contains the latest draft and `rejected: true`. A negative revision or a
+revision above the current revision fails with an error.
+
+`composer-watch` keeps one stream open for one session. The server first sends a `draft`
+message with `session` and the latest state in `composer`. It then sends a `draft`
+message after each newer save. A slow view can skip intermediate revisions. It never
+receives an older revision after a newer one. The client sends `ping` at least every 30
+seconds and gets `pong`. Closing the stream only removes the watch.
 
 Draft text is limited to 64 KiB of UTF-8 and at most 8 distinct attachments from that
 session. Each attachment contains `id`, `name`, `mediaType`, `size`, and `path`. Uploads
@@ -337,13 +350,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/15") {
+    if (message.server.protocol !== "bonbon/16") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/15", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/16", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

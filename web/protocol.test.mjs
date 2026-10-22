@@ -32,21 +32,17 @@ test('verify identity before sending any request', () => {
   }
 });
 
-test('multiple views can request control and leave by closing their connection', () => {
+test('every active view can send input and leaves by closing its connection', () => {
   const peer = new Peer(server, request, {}, Socket, 'localhost:1234');
   peer.socket.receive({ type: 'server', server });
-  peer.socket.receive({ type: 'session', session: 'one', active: true });
-  peer.socket.receive({ type: 'control', controlling: false });
   assert.equal(peer.send({ type: 'input', data: 'eA==' }), false);
-  assert.equal(peer.send({ type: 'signal', signal: 2 }), false);
-  assert.equal(peer.send({ type: 'take-control', size: { rows: 24, cols: 80 } }), true);
-  assert.equal(peer.send({ type: 'resize', size: { rows: 24, cols: 80 } }), true);
-  peer.socket.receive({ type: 'control', controlling: true });
+  peer.socket.receive({ type: 'session', session: 'one', active: true });
   assert.equal(peer.send({ type: 'input', data: 'eA==' }), true);
-  peer.socket.receive({ type: 'control', controlling: false });
-  assert.equal(peer.send({ type: 'input', data: 'eQ==' }), false);
+  assert.equal(peer.send({ type: 'signal', signal: 2 }), true);
+  assert.equal(peer.send({ type: 'resize', size: { rows: 24, cols: 80 } }), true);
   const sent = peer.socket.sent.length;
   peer.close();
+  assert.equal(peer.send({ type: 'input', data: 'eQ==' }), false);
   assert.equal(peer.socket.sent.length, sent);
   assert.equal(peer.socket.readyState, 3);
 });
@@ -56,7 +52,6 @@ test('lost connection reports uncertain delivery without sending again', () => {
   const peer = new Peer(server, request, { error: e => errors.push(e) }, Socket, 'localhost:1234');
   peer.socket.receive({ type: 'server', server });
   peer.socket.receive({ type: 'session', active: true });
-  peer.socket.receive({ type: 'control', controlling: true });
   peer.send({ type: 'input', data: 'eA==' });
   peer.socket.onclose();
   assert.equal(errors.length, 1);
@@ -82,14 +77,13 @@ test('slow network detaches without queueing more input', () => {
   const peer = new Peer(server, request, { error: e => { error = e; }, message: m => messages.push(m) }, Socket, 'localhost:1234');
   peer.socket.receive({ type: 'server', server });
   peer.socket.receive({ type: 'session', active: true });
-  peer.socket.receive({ type: 'control', controlling: true });
   peer.socket.bufferedAmount = 2 * 1024 * 1024;
   assert.equal(peer.send({ type: 'input', data: 'eA==' }), false);
   assert.match(error.message, /Some input may have been delivered/);
   assert.equal(peer.socket.sent.length, 1);
   assert.equal(peer.socket.readyState, 3);
   peer.socket.receive({ type: 'frame', revision: 1, full: true, size: { cols: 80, rows: 24 }, data: 'eA==' });
-  assert.equal(messages.length, 2); // Drop events queued after failure or closure.
+  assert.equal(messages.length, 1); // Drop events queued after failure or closure.
 });
 
 test('composer preserves multiline Unicode as one paste followed by Enter', () => {
@@ -114,7 +108,6 @@ test('input receipt is correlated and disconnect or exit never retries a submiss
     const peer = new Peer(server, request, {}, Socket, 'localhost:1234');
     peer.socket.receive({ type: 'server', server });
     peer.socket.receive({ type: 'session', active: true });
-  peer.socket.receive({ type: 'control', controlling: true });
     let settled = false;
     const sent = peer.writeInput('eA==', 'receipt-1').then(() => { settled = true; });
     const failed = outcome === 'receipt' ? null : assert.rejects(sent, /delivery|write failed/);

@@ -28,6 +28,8 @@ type Server struct {
 	mu       sync.Mutex
 	launchMu sync.Mutex
 	sessions map[string]*runningSession
+	watchMu  sync.Mutex
+	watchers map[string]map[*draftWatcher]struct{} // Draft watchers by session ID.
 }
 
 // On cancellation, Serve stops new requests and waits for agent cleanup. The caller
@@ -201,6 +203,8 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)
+	case "composer-watch":
+		s.watchComposer(ctx, conn, request.Session)
 	case "composer-attach":
 		result, err := s.upload(request.Session, request.Upload)
 		s.reply(conn, result, err)

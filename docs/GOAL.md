@@ -87,9 +87,10 @@ saved project. Each project keeps independent unfinished drafts. `bonbon ui` nee
 path or session arguments. Shell launches use the server's environment.
 
 Closing a browser view leaves work and recording running. Reopening a live session joins
-the same process. Multiple tabs can share it, with one controller for input and PTY
-size. Stopping a session explicitly ends work for all views. Server stop and restart end
-all owned sessions and finalize their history. Ended sessions remain readable.
+the same process. Multiple tabs can share it. Every tab can send input. The PTY uses the
+size of the tab that most recently sent input. Stopping a session explicitly ends work
+for all views. Server stop and restart end all owned sessions and finalize their
+history. Ended sessions remain readable.
 
 Original terminal input and output are authoritative evidence. BonBon derives readable
 text from this evidence. Terminal redraws and escape sequences do not provide exact
@@ -123,7 +124,7 @@ Keep a terminal-centered workspace with a resizable message editor:
 Support multiple windows to view different sessions at the same time. Each window shows
 one selected session. A session change in one window must not change another window.
 Windows share recorded history and run state. Another window must not duplicate an
-existing agent run. Windows for the same session share one process and one controller.
+existing agent run. Windows for the same session share one process and one PTY size.
 
 After the web workflow is useful, provide one global shortcut to open BonBon's UI or
 move it to the foreground. Per-window and per-session shortcuts are not required. The

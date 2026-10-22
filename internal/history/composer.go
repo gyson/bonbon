@@ -2,10 +2,13 @@ package history
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 )
 
-var ErrDraftConflict = errors.New("draft changed in another view; copy your edits before reloading")
+// ErrDraftSent reports that another view started a send after the base revision of a
+// save. The save must not replace that send or bring back the sent text.
+var ErrDraftSent = errors.New("a message was sent from another view after this draft loaded")
 
 // LatestDraft and SaveDraft keep immutable draft revisions in the event archive. Drafts
 // have no run ID. Do not treat them as sent messages or replay input.
@@ -18,7 +21,12 @@ func (s *Store) LatestDraft(sid string) (Event, error) {
 	return event, err
 }
 
-func (s *Store) SaveDraft(sid string, revision int64, data []byte) (int64, error) {
+// SaveDraft stores the whole draft as a new revision. The latest save wins, also when
+// its base revision is older than the current revision. Earlier revisions stay in the
+// archive. A save from an older base is rejected with ErrDraftSent when its base or a
+// later revision is pending. A pending revision records a send, and another view has
+// already changed the draft after it.
+func (s *Store) SaveDraft(sid string, base int64, data []byte) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -28,8 +36,17 @@ func (s *Store) SaveDraft(sid string, revision int64, data []byte) (int64, error
 	if err = tx.QueryRow("SELECT COALESCE(MAX(seq),0) FROM events WHERE session_id=? AND kind='draft'", sid).Scan(&current); err != nil {
 		return 0, err
 	}
-	if current != revision {
-		return 0, ErrDraftConflict
+	if base < 0 || base > current {
+		return 0, errors.New("invalid draft revision")
+	}
+	if base < current {
+		sent, err := sentSince(tx, sid, base)
+		if err != nil {
+			return 0, err
+		}
+		if sent {
+			return 0, ErrDraftSent
+		}
 	}
 	result, err := tx.Exec("INSERT INTO events(session_id,run_id,kind,data,text,created) VALUES(?,'','draft',?,'',?)", sid, data, Now())
 	if err != nil {
@@ -40,6 +57,27 @@ func (s *Store) SaveDraft(sid string, revision int64, data []byte) (int64, error
 		return 0, err
 	}
 	return seq, tx.Commit()
+}
+
+func sentSince(tx *sql.Tx, sid string, base int64) (bool, error) {
+	rows, err := tx.Query("SELECT data FROM events WHERE session_id=? AND kind='draft' AND seq>=?", sid, base)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var data []byte
+		if err = rows.Scan(&data); err != nil {
+			return false, err
+		}
+		var draft struct {
+			Pending bool `json:"pending"`
+		}
+		if json.Unmarshal(data, &draft) == nil && draft.Pending {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 // Verify attachment scope on every read, including draft references.

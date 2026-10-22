@@ -177,7 +177,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/15`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/16`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -297,8 +297,8 @@ refresh. The server also checks archive state at Start. Read-only SQL includes a
 data unless filtered explicitly. There is no permanent delete action.
 
 The UI renders titles, errors, and recorded output as text. It never treats them as
-HTML. Each tab has its own selected session. Tabs can share a session, with one
-controller for input and PTY size. Other tabs watch and can explicitly take control.
+HTML. Each tab has its own selected session. Tabs can share a session. Every tab can
+type and send messages. The PTY uses the size of the tab that most recently sent input.
 
 ### Session preparation, settings, and worktrees
 
@@ -322,8 +322,9 @@ General. Each draft keeps its own name, tool snapshot, worktree choices, message
 and attachments across views and server restarts. **＋** always creates a new draft.
 
 A reopened sidebar entry keeps its choices and message. Launch settings use optimistic
-revisions, separately from message revisions. Conflicts preserve the editor's local
-edits and report an error. Unsent edits warn before unload.
+revisions, separately from message revisions. A launch settings conflict preserves the
+local edits and reports an error. Message drafts sync between views, as described in
+[Message editor](#message-editor). Unsent edits warn before unload.
 
 Start claims the saved revision before creating files or a process. Duplicate starts and
 edits to an already claimed preparation fail. Reopening or reconnecting never resubmits
@@ -472,7 +473,8 @@ Use Home/End to reach the limits. Both panes keep a minimum height. Editor conte
 scroll when needed. The editor size stays with the browser view across session switches
 and resets on reload. Size changes use the existing terminal viewport updates.
 
-Only the controller changes the PTY size. Direct terminal interaction remains available.
+A viewport change resizes the PTY only from the size owner view. Direct terminal
+interaction remains available.
 Enter inserts a newline. Send sends one `input` control to the attached PTY with the
 message followed by Enter. When the application enables bracketed paste, the message
 uses its paste delimiters. Newlines are normalized to carriage returns, matching
@@ -483,11 +485,26 @@ terminal control characters. Existing input at the terminal prompt is not cleare
 BonBon does not infer readiness or completion, and a shell still treats submitted text
 as shell input.
 
-Drafts save after an editing pause and before session switches. The shared
+Drafts save 400 ms after an editing pause and before session switches. The shared
 `composer-draft` operation stores immutable `draft` events in SQLite with no run ID. The
-event sequence is a revision. The server rejects stale saves to preserve edits from
-another view. Draft text is limited to 64 KiB and 8 attachment references. Drafts are
-not sent messages and never appear in terminal frames.
+event sequence is a revision. Draft text is limited to 64 KiB and 8 attachment
+references. Drafts are not sent messages and never appear in terminal frames.
+
+All views of a session show the same draft. Each view keeps one `composer-watch` stream
+for its selected session and loads the draft from it. After each save, the server
+pushes the whole draft to every view of that session. A view without unsaved edits
+applies a newer pushed draft. A view with unsaved edits keeps them, and its next save
+wins. Earlier revisions stay in the archive.
+
+An older view never replaces a pending draft. The server does not store a save from an
+older revision when that revision or a later one is pending. That view then shows the
+latest draft and reports that its last edit was not saved. A view also applies a pushed
+pending draft at once, even over unsaved edits. A send stops when a draft from the
+server replaces the draft during that send.
+
+The watch reconnects after a transport failure and loads the latest draft again. While
+it reconnects, the editor still saves through `composer-draft`. A changed server
+identity stops the watch until the page reloads.
 
 Before submission the editor saves `pending: true`. An optional input ID requests an
 `input-ack` after recording and PTY write. The browser clears the draft only after a
@@ -547,19 +564,25 @@ are outside the shutdown guarantee.
 
 The server holds a registry of live sessions. Each run owns its PTY, terminal emulator,
 controls, and durable capture independently of clients. Multiple views share the run.
-One view controls input, signals, and PTY size. The first view gets control. Additional
-views watch and can take control explicitly.
+Every view can send input and signals. There is no controller role or Take control
+button.
 
-A socket closing only removes that view and releases its control. Existing viewers do
-not automatically take over. Stop ends work for all views. The browser shows
-Viewing/Controlling and Take control. There is no Detach button.
+The PTY uses the viewport size of one view, the size owner. A view becomes the size owner
+when it joins and no view owns the size. A view that sends input becomes the size owner
+before the server writes that input. Terminal focus and mouse reports are input too.
+Signals do not change the size owner.
+
+A socket closing only removes that view. When the size owner leaves, the PTY keeps its
+size. The next view that sends input or a new viewport size becomes the size owner. Stop
+ends work for all views. There is no Detach button.
 
 Each view has its own viewport size. Smaller views crop columns and show the bottom
 screen rows, putting clipped top rows in scrollback. Larger views pad unused space.
 
-Only a controller resize reaches the shared emulator and PTY. Accepted input is ordered
-with control transfers. The server sends receipts to their original view, even after a
-control transfer. Viewer input and signals never reach the process.
+Only a size owner resize reaches the shared emulator and PTY. The server orders accepted
+input with size owner changes. A size change reaches the PTY before the input that caused
+it. The server sends receipts to their original view. Input that two views send at the
+same time can interleave.
 
 Committed output and size events update the emulator in order. Terminal query responses
 are recorded as `terminal-response` before PTY delivery. One notification combines
@@ -570,9 +593,9 @@ After its acknowledgment, the server computes changes from the latest state, at 
 times per second. Final output is acknowledged before exit. Input receipts use a
 separate bounded queue.
 
-A new attachment always starts with a full frame. Reconnecting joins as a viewer if
-another view holds control. The server updates PTY size when the controller's dimensions
-change. Reattaching at the same size uses the saved screen without requesting an
+A new attachment always starts with a full frame. Reconnecting does not change the PTY
+size while another view owns it. The server updates PTY size when the size owner's
+dimensions change. Reattaching at the same size uses the saved screen without requesting an
 application redraw. An ended view never starts another process or invokes native
 provider resume.
 
@@ -770,39 +793,42 @@ reported.
 
 The UI-only workflow passes `CGO_ENABLED=0 go test ./...`, `go vet ./...`,
 `go test -race ./...`, `make build`, and `make web-check` on macOS. A browser smoke test
-used a compiled binary to create a shell and type a command. It opened a second view,
-transferred control, and closed that view. Then it reconnected, stopped the session, and
+used a compiled binary to create a shell and type a command. It opened a second view and
+closed that view. Then it reconnected, stopped the session, and
 reloaded its readable final screen. The test used a temporary instance and workspace,
 with no real agent CLI.
 
 A clean frontend dependency install and bundle build also pass. The bundled UI was
-checked with direct terminal input, message submission, control transfer, automatic
-reconnect after pausing the server, and stopped-session reload. The browser reported no
+checked with direct terminal input, message submission, automatic reconnect after
+pausing the server, and stopped-session reload. The browser reported no
 errors. The temporary server and shell exited after validation.
 
 Go integration tests use temporary instances, real server processes, synthetic shell
 commands, and WebSocket views. They cover raw bytes, arguments, resize, Ctrl+C, exit
 status, closed views, and background capture. They also cover reconnect to the same PID,
 explicit stop, foreground job cleanup, shared workspaces, and SQL scope. They verify
-interrupted runs without input replay.
+interrupted runs without input replay. They also verify that input from either of two
+views moves the real PTY size to that view. Two draft watches on a real server receive
+each save and a pending send, and a stale save gets the latest draft back.
 
-Activity fixtures check stable ordering across same-size reattachment and control
-transfer, real PTY resize notifications, and promotion by detached output. History tests
-exclude drafts and display events from recency and its timestamp tie-break. They also
-check creation order for equal timestamps. Server tests cover start/stop/restart,
-instance isolation, stale or tampered metadata, protocol checks, idle peers, and
-shutdown with stalled views.
+Activity fixtures check stable ordering across same-size reattachment, real PTY resize
+notifications, and promotion by detached output. History tests exclude drafts and
+display events from recency and its timestamp tie-break. They also check creation order
+for equal timestamps. Server tests cover start/stop/restart, instance isolation, stale
+or tampered metadata, protocol checks, idle peers, and shutdown with stalled views.
 
-Frame fixtures cover independent viewport sizes, explicit control transfer, blocked
-viewer input, receipt routing, slow views, final-frame ordering, and ended-screen
+Frame fixtures cover independent viewport sizes, size owner changes, input from every
+view, receipt routing, slow views, final-frame ordering, and ended-screen
 reconstruction. Cross-engine fixtures compare Go-generated frames with xterm.js for
 cells, styles, cursor, scrollback, resize, split escapes, Unicode, and alternate
 screens.
 
 TypeScript fixtures cover reconnect delays, canceled retries, uncertain session starts,
-identity checks, binary input, and viewer input guards. They also cover ended views,
-slow sends, disconnects without input retry, frame parsing and acknowledgments, paste
-boundaries, and file references. Go tests check embedded assets and browser origin
+identity checks, binary input, and input guards for inactive views. They also cover
+ended views, slow sends, disconnects without input retry, frame parsing and
+acknowledgments, paste boundaries, and file references. Draft watch fixtures cover the
+watch request, keepalive, reconnect, identity errors, and the rule for applying a pushed
+draft. Go tests check embedded assets and browser origin
 restrictions. CLI fixtures check the home-page opener, instance selection, invalid
 arguments, removed session commands, and opener failures.
 
@@ -839,15 +865,28 @@ restart. All temporary servers were stopped. No user database or real agent CLI 
 for these upgrade checks.
 
 Storage and composer tests cover read-only queries, cancellation and limits, format
-rejection, persistence, and original bytes. They also cover draft conflicts, pending
-submissions, attachment limits, and cache reconstruction after database reopen.
+rejection, persistence, and original bytes. They also cover the latest-save rule,
+rejected saves after a send, draft watch pushes, pending submissions, attachment limits,
+and cache reconstruction after database reopen.
 
 Earlier browser checks with synthetic terminals verified creation, direct input,
 multiline composition, file selection, and clipboard images. They also verified saved
 drafts, session changes, stopped-screen reload, and reconnection after a paused server.
-Two-tab checks verified shared output, control transfer, and stop for all views. Those
+Two-tab checks verified shared output and stop for all views. Those
 checks do not establish compatibility with real agent approval flows or untested agent
 CLI versions.
+
+A browser check without the controller role used a temporary instance and a synthetic zsh
+shell. Two tabs with 82 × 15 and 156 × 38 terminals shared one session. Each tab typed
+`stty size` with no control step. The shell reported the size of the tab that typed.
+Send from the larger tab reached the shell. The recorded PTY size changed only when the
+other tab sent input. No browser errors were reported. No real agent CLI was used.
+
+A browser check of live draft sync used a temporary instance and two tabs on one draft.
+Text typed in either tab appeared in the other tab within two seconds, with no reload.
+After a synthetic zsh session started, Send from one tab ran the message. The editor in
+the other tab cleared at the same time. The archive held four draft revisions: two edits,
+the pending send, and the cleared draft. No browser errors were reported.
 
 ## Limitations
 
@@ -859,6 +898,7 @@ and prevent cleanup. Provider-owned daemons retain their lifecycle.
 BonBon stops the launched group and a shell's foreground job. It does not track other
 background groups. Linux runtime behavior and large archives are unverified.
 
-Each session has a shared draft with optimistic revision checks. Open editors do not
-synchronize draft changes live. Conflicting edits are retained locally and reported
-rather than overwriting another saved revision.
+Each session has one shared draft. Other views update after each save, about half a
+second after typing stops. They do not show each keystroke. When two views edit at the
+same time, the latest save wins. The earlier text then stays only in archived draft
+revisions. The draft does not merge edits from two views.

@@ -2,12 +2,15 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"bonbon/internal/history"
 	"bonbon/internal/protocol"
@@ -75,7 +78,7 @@ func TestComposerPersistsDraftAndOriginalFileWithoutCache(t *testing.T) {
 	}
 }
 
-func TestComposerRejectsStaleSavesAndCrossSessionFiles(t *testing.T) {
+func TestComposerLatestSaveWinsAndKeepsSendsAndSessionFiles(t *testing.T) {
 	s, id := composerServer(t)
 	file, err := s.upload(id, &protocol.Upload{Name: "fixture.txt", Data: []byte("file")})
 	if err != nil {
@@ -94,23 +97,101 @@ func TestComposerRejectsStaleSavesAndCrossSessionFiles(t *testing.T) {
 	if _, err = s.composer("missing", nil); err == nil {
 		t.Fatal("accepted missing session")
 	}
+	// Two views save from the same base. Both saves are stored, and the latest wins.
 	results := make(chan error, 2)
 	for range 2 {
 		go func() { _, err := s.composer(id, &protocol.Draft{Text: "concurrent edit"}); results <- err }()
 	}
-	var successes, conflicts int
 	for range 2 {
-		err := <-results
-		if err == nil {
-			successes++
-		} else if errors.Is(err, history.ErrDraftConflict) {
-			conflicts++
-		} else {
+		if err := <-results; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if successes != 1 || conflicts != 1 {
-		t.Fatalf("lost update: %d successes, %d conflicts", successes, conflicts)
+	base, err := s.composer(id, nil)
+	if err != nil || base.Draft.Text != "concurrent edit" {
+		t.Fatalf("latest save: %+v, %v", base, err)
+	}
+	sending, err := s.composer(id, &protocol.Draft{Revision: base.Draft.Revision, Text: "sending", Pending: true})
+	if err != nil || sending.Rejected {
+		t.Fatalf("pending save: %+v, %v", sending, err)
+	}
+	// A stale save gets the latest draft back instead of replacing the send.
+	stale, err := s.composer(id, &protocol.Draft{Revision: base.Draft.Revision, Text: "stale edit"})
+	if err != nil || !stale.Rejected || !stale.Draft.Pending || stale.Draft.Text != "sending" || stale.Draft.Revision != sending.Draft.Revision {
+		t.Fatalf("stale save replaced a send: %+v, %v", stale, err)
+	}
+}
+
+func TestComposerWatchPushesNewestDraft(t *testing.T) {
+	s, id := composerServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn, peer := attachmentPair(t)
+	done := make(chan struct{})
+	go func() { defer close(done); s.watchComposer(ctx, conn, id) }()
+	read := func() protocol.Message {
+		t.Helper()
+		peer.SetReadDeadline(time.Now().Add(5 * time.Second))
+		var m protocol.Message
+		if err := peer.ReadJSON(&m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	if m := read(); m.Type != "draft" || m.Session != id || m.Composer == nil || m.Composer.Draft.Revision != 0 || m.Composer.Draft.Attachments == nil {
+		t.Fatalf("initial draft: %+v", m)
+	}
+	saved, err := s.composer(id, &protocol.Draft{Text: "from another view"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := read(); m.Type != "draft" || m.Composer.Draft.Revision != saved.Draft.Revision || m.Composer.Draft.Text != "from another view" {
+		t.Fatalf("pushed draft: %+v", m)
+	}
+	// Quick saves can combine. A view never receives an older revision after a newer one.
+	for i := range 3 {
+		if saved, err = s.composer(id, &protocol.Draft{Revision: saved.Draft.Revision, Text: fmt.Sprint("edit ", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for last := int64(0); last != saved.Draft.Revision; {
+		m := read()
+		if m.Type != "draft" || m.Composer.Draft.Revision <= last {
+			t.Fatalf("old or unexpected push: %+v", m)
+		}
+		last = m.Composer.Draft.Revision
+	}
+	if saved, err = s.composer(id, &protocol.Draft{Revision: saved.Draft.Revision, Text: "sending", Pending: true}); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(); !m.Composer.Draft.Pending {
+		t.Fatalf("pending draft was not pushed: %+v", m)
+	}
+	// A rejected save changes nothing, so it pushes nothing. The next message is pong.
+	if stale, err := s.composer(id, &protocol.Draft{Revision: saved.Draft.Revision - 1, Text: "stale"}); err != nil || !stale.Rejected {
+		t.Fatalf("stale save: %+v, %v", stale, err)
+	}
+	if err = peer.WriteJSON(protocol.Message{Type: "ping"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(); m.Type != "pong" {
+		t.Fatalf("expected pong: %+v", m)
+	}
+	// Server shutdown ends the watch and removes it.
+	cancel()
+	<-done
+	s.watchMu.Lock()
+	remaining := len(s.watchers)
+	s.watchMu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("%d sessions still have watchers", remaining)
+	}
+	missingConn, missingPeer := attachmentPair(t)
+	go s.watchComposer(context.Background(), missingConn, "missing")
+	missingPeer.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var m protocol.Message
+	if err = missingPeer.ReadJSON(&m); err != nil || m.Type != "error" {
+		t.Fatalf("watch accepted a missing session: %+v, %v", m, err)
 	}
 }
 

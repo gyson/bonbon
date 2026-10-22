@@ -40,7 +40,7 @@ implemented. See [SPEC.md](SPEC.md#projects-and-launches).
 - Preserve history and draft durability as the workspace grows.
 - Keep recorded text and file previews from executing as page content.
 - Check diff and file views against the selected workspace, including symlinks.
-- Preserve shared views, single-controller input, and recording behavior. Reconnection
+- Preserve shared views, input from every view, and recording behavior. Reconnection
   must not replay input. It must not treat uncertain delivery as proof that a send
   failed.
 - Verify development use does not modify production data.
@@ -68,7 +68,7 @@ around Codex or another specific agent.
 - Show **Output active** or **Quiet** based on terminal output. Quiet means no recent
   output. It does not mean the agent finished or is ready for another prompt.
 - Keep activity separate from session lifecycle (`running`, `stopped`, and other process
-  states) and view ownership (`Viewing` or `Controlling`).
+  states).
 - Compute activity in the server and expose it through the shared protocol to browser
   views, including session lists and reconnects. Keep tracking without clients.
 - Choose and test timing thresholds to avoid flicker. Treat spinners and background
