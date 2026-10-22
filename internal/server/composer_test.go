@@ -248,3 +248,61 @@ func TestComposerRejectsInvalidUploadsAndEscapingCache(t *testing.T) {
 		t.Fatal("modified outside cache root", entries, err)
 	}
 }
+
+func TestSentMessagesDeriveDeliveryFromNextRevision(t *testing.T) {
+	s, id := composerServer(t)
+	file, err := s.upload(id, &protocol.Upload{Name: "notes.txt", MediaType: "text/plain", Data: []byte("notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revision int64
+	save := func(draft protocol.Draft) {
+		t.Helper()
+		draft.Revision = revision
+		state, err := s.composer(id, &draft)
+		if err != nil || state.Rejected {
+			t.Fatalf("save %+v: %+v, %v", draft, state, err)
+		}
+		revision = state.Draft.Revision
+	}
+	// A send with a receipt clears the draft.
+	save(protocol.Draft{Text: "first", Attachments: []int64{file.ID}, Pending: true})
+	save(protocol.Draft{})
+	// The user unlocked this send without a receipt.
+	save(protocol.Draft{Text: "second", Pending: true})
+	save(protocol.Draft{Text: "second"})
+	// This send still waits for a check of the terminal.
+	save(protocol.Draft{Text: "third", Pending: true})
+
+	page, err := s.sentMessages(id, 0)
+	if err != nil || page.More || len(page.Messages) != 3 {
+		t.Fatalf("sent messages: %+v, %v", page, err)
+	}
+	got := []string{}
+	for _, message := range page.Messages {
+		got = append(got, fmt.Sprintf("%s %t %d", message.Text, message.Confirmed, len(message.Attachments)))
+	}
+	if want := []string{"third false 0", "second false 0", "first true 1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("sent messages = %q, want %q", got, want)
+	}
+	if attachment := page.Messages[2].Attachments[0]; attachment.ID != file.ID || attachment.Name != "notes.txt" || attachment.Path != file.Path {
+		t.Fatalf("attachment metadata: %+v", attachment)
+	}
+	older, err := s.sentMessages(id, page.Messages[1].Revision)
+	if err != nil || len(older.Messages) != 1 || older.Messages[0].Text != "first" || !older.Messages[0].Confirmed {
+		t.Fatalf("older page: %+v, %v", older, err)
+	}
+	for i := 0; i < sentPage; i++ {
+		save(protocol.Draft{Text: fmt.Sprint("bulk ", i), Pending: true})
+		save(protocol.Draft{})
+	}
+	if page, err = s.sentMessages(id, 0); err != nil || !page.More || len(page.Messages) != sentPage || page.Messages[0].Text != fmt.Sprint("bulk ", sentPage-1) {
+		t.Fatalf("full page: more %v, %d messages, %v", page.More, len(page.Messages), err)
+	}
+	if _, err = s.sentMessages(id, -1); err == nil {
+		t.Fatal("accepted a negative revision")
+	}
+	if _, err = s.sentMessages("missing", 0); err == nil {
+		t.Fatal("listed sent messages for a missing session")
+	}
+}

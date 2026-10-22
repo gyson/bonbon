@@ -177,7 +177,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/16`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/17`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -455,9 +455,10 @@ Large interrupted recordings can take longer to reconstruct. This restores a dis
 not a process or native agent context. Terminal dimensions are limited to 2–512 columns
 and 1–256 rows to bound emulator memory.
 
-Session views show the server-rendered terminal and message editor. There is no separate
-text-history panel or browser SQL client. The `bonbon query` command reads archived
-events. There is no semantic chat transcript or file/diff view.
+Session views show the server-rendered terminal and message editor. The only text
+history in the UI is the list of sent messages. There is no browser SQL client. The
+`bonbon query` command reads archived events. There is no semantic chat transcript or
+file/diff view.
 
 A browser check with a synthetic terminal confirmed live reattachment, switching
 sessions, stop followed by history reload, and page reload at a different window width.
@@ -514,6 +515,22 @@ write, or reload during submission retains the draft without retrying it.
 The user must check the terminal and explicitly unlock that draft before editing and
 submitting again. Users can edit drafts before launch, while detached, or after the
 process ends. Send is disabled in these states.
+
+**Sent messages** in the editor heading opens a list of the session's sent messages.
+The oldest message is at the top and the newest is at the bottom. The list opens
+scrolled to the bottom and shows the newest 20 messages. **Show older messages** at the
+top loads 20 more and keeps the visible messages in place. The `composer-sent` operation
+derives this list from the existing pending draft revisions. Thus the list also includes
+sends from before this feature. Direct terminal input is not listed.
+
+Each message shows its time, text, and attached file names. **Sent** means that the
+editor got an input receipt and then cleared the draft. **Not confirmed** means that
+there was no receipt, or the user unlocked the draft. This status is derived. It does
+not confirm that the application accepted the message.
+
+**Copy** puts the message text on the system clipboard. Users can then paste it into
+any session. Copy does not include attachments or their file paths. It is not available
+for a message without text. The list does not change the draft or send input.
 
 The editor accepts file selection, drag/drop, and clipboard files, including images when
 supplied by the browser. `composer-attach` copies original bytes into an `attachment`

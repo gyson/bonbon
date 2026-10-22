@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/16"
+const Version = "bonbon/17"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -88,6 +88,24 @@ type Composer struct {
 	Draft       Draft        `json:"draft"`
 	Attachments []Attachment `json:"attachments"`
 	Rejected    bool         `json:"rejected,omitempty"`
+}
+
+// SentMessage is one send from the message editor. It is derived from the pending draft
+// revision that the editor saves before it writes input. Confirmed reports that the
+// editor got an input receipt and then cleared the draft. A receipt does not confirm
+// that the application accepted the message.
+type SentMessage struct {
+	Revision    int64        `json:"revision"`
+	Created     string       `json:"created"`
+	Text        string       `json:"text"`
+	Attachments []Attachment `json:"attachments"`
+	Confirmed   bool         `json:"confirmed"`
+}
+
+// SentPage lists sent messages, newest first. More reports older messages.
+type SentPage struct {
+	Messages []SentMessage `json:"messages"`
+	More     bool          `json:"more"`
 }
 
 type SessionInfo struct {

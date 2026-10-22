@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/16`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/17`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/16",
+    "protocol": "bonbon/17",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/16",
+    "protocol": "bonbon/17",
     "operation": "session-list",
     "limit": 10
   }
@@ -88,6 +88,7 @@ operations.
 | `session-stop` | `session` ID | `result`, containing `stopped` |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
 | `composer-watch` | `session` ID | A stream of `draft` messages: the latest draft first, then each newer saved draft |
+| `composer-sent` | `session` ID, optional `revision` (list sends older than this revision) | `result`, containing `messages` (at most 20, newest first) and `more` |
 | `composer-attach` | `session` ID, `upload` with `name`, `mediaType`, base64 `data` | `result`, containing attachment metadata and its local file path |
 | `stop` | `instance`, from the verified greeting | `result`, containing `stopping`. The server then shuts down. |
 | `settings-get` | none | `result`, saved settings and revision |
@@ -138,6 +139,9 @@ Server startup upgrades formats 3–5 automatically using embedded migrations.
 Protocol 16 removes the controller role and the `control` and `take-control` messages.
 Every view can send input. It adds `composer-watch` and the latest-save rule for
 drafts. The SQLite format does not change.
+
+Protocol 17 adds the read-only `composer-sent` operation. It lists the messages that the
+message editor sent. The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -332,6 +336,17 @@ Plain draft text and uploaded files are never replayed as input by the server. C
 compose local file references and paste delimiters. The server preserves the submitted
 input bytes. It does not implement a provider message or image protocol.
 
+`composer-sent` lists these sends. Each pending draft revision is one sent message. A
+message contains `revision`, `created`, `text`, `attachments` (attachment metadata), and
+`confirmed`. To read older messages, send the `revision` of the oldest message that you
+have. The list includes only sends from the message editor, not direct terminal input.
+
+`confirmed` is derived data. It is true when the next draft revision is empty and not
+pending. The browser saves that revision only after an input receipt. Any other next
+revision, or no next revision, gives `false`. A receipt confirms the PTY write only. It
+does not confirm that the application accepted the message. The operation never sends
+input.
+
 ## Browser access
 
 The HTTP Host must be `127.0.0.1:PORT` or `localhost:PORT`. An Origin header, if
@@ -350,13 +365,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/16") {
+    if (message.server.protocol !== "bonbon/17") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/16", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/17", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

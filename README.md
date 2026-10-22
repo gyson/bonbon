@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This change uses protocol `bonbon/16`.
+This change uses protocol `bonbon/17`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the

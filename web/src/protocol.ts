@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/16';
+export const VERSION = 'bonbon/17';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -45,7 +45,13 @@ export interface Attachment { id: number; name: string; mediaType: string; size:
 // A save reply sets rejected when the server kept a send from another view. The reply
 // then holds the latest draft.
 export interface ComposerState { draft: Draft; attachments: Attachment[]; rejected?: boolean }
+// A sent message is derived from the pending draft revision that the editor saves
+// before each send. Confirmed means that the editor got an input receipt. It does not
+// mean that the application accepted the message.
+export interface SentMessage { revision: number; created: string; text: string; attachments: Attachment[]; confirmed: boolean }
+export interface SentPage { messages: SentMessage[]; more: boolean }
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
+type SentRequest = { operation: 'composer-sent'; session: string; revision?: number };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
 
 type ListRequest = { operation: 'session-list'; limit?: number; offset?: number; archived?: boolean; query?: string };
@@ -60,7 +66,7 @@ type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
-type RPCRequest = ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   | { operation: 'session-resume'; session: string; size: Size };
@@ -254,6 +260,7 @@ export function call(server: ServerInfo, request: ArchiveRequest): Promise<{ arc
 export function call(server: ServerInfo, request: ListRequest): Promise<SessionInfo[]>;
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;
+export function call(server: ServerInfo, request: SentRequest): Promise<SentPage>;
 export function call(server: ServerInfo, request: UploadRequest): Promise<Attachment>;
 export function call(server: ServerInfo, request: RPCRequest): Promise<unknown> {
   return new Promise<unknown>((resolve, reject) => {
