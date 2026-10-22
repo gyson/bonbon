@@ -248,8 +248,8 @@ appearances. The sidebar mark uses its text color.
 
 Server start and repeated start print a clickable HTTP URL without opening a browser.
 `bonbon ui` verifies the selected instance through the same WebSocket health check as
-the other CLI commands, then opens `http://127.0.0.1:PORT/` with no session fragment. It
-uses `open` on macOS and `xdg-open` on Linux. It starts no server or agent. Missing or
+the other CLI commands, then opens the home page at `http://127.0.0.1:PORT/`. It uses
+`open` on macOS and `xdg-open` on Linux. It starts no server or agent. Missing or
 mismatched server information prevents browser launch.
 
 Launcher failures include the URL for manual opening. Global directory selection applies
@@ -274,7 +274,11 @@ changes can move items between pages.
 The list refreshes every five seconds while visible. Project names are plain text. The
 small arrow expands or collapses a group. Each project's **＋** creates and selects a new
 draft entry. A click on an existing entry reopens it by session ID. The URL keeps that
-ID through reload and launch.
+ID as `/sessions/<id>` through reload and launch. The welcome view is the home page at
+`/`. The BonBon logo in the sidebar returns to it.
+
+The browser tab title shows the session or draft name. Settings shows `Settings`, and
+the home page shows `BonBon`.
 
 **Archive** saves the current launch choices and message editor. It hides a draft or
 finished session from the normal list and returns to the welcome view. **Archived**
@@ -298,12 +302,13 @@ controller for input and PTY size. Other tabs watch and can explicitly take cont
 
 ### Session preparation, settings, and worktrees
 
-Settings is an instance-wide page with a default tool, default worktree choice, default
-Git base, and an ordered list of named commands. Shell is built in and sends no startup
-command. Users can add, edit, reorder, and remove other presets. A command is one line
-of shell syntax, at most 1,000 UTF-8 bytes, without control characters. BonBon does not
-install tools, choose models, or check provider-specific arguments. Commands may contain
-secrets and are stored locally in the same unencrypted archive as terminal input.
+Settings is an instance-wide page at `/settings`. Its URL has no session ID. The page
+has a default tool, default worktree choice, default Git base, and an ordered list of
+named commands. Shell is built in and sends no startup command. Users can add, edit,
+reorder, and remove other presets. A command is one line of shell syntax, at most 1,000
+UTF-8 bytes, without control characters. BonBon does not install tools, choose models,
+or check provider-specific arguments. Commands may contain secrets and are stored
+locally in the same unencrypted archive as terminal input.
 
 The server copies defaults when it creates a preparation. Non-Git folders do not enable
 the worktree default. A preparation stores its chosen tool name and command
@@ -418,9 +423,9 @@ other non-display source escape sequences.
 
 Selecting another session closes the old view before opening the selected one. Closing
 or refreshing the tab leaves work and recording running. Refresh reopens the project
-draft or session identified in the URL fragment. Transport failures trigger automatic
-reconnect with increasing delays from 0.5 to 30 seconds. The last screen stays visible
-and input is disabled until a fresh frame is rendered.
+draft or session identified in the URL path, or Settings at `/settings`. Transport
+failures trigger automatic reconnect with increasing delays from 0.5 to 30 seconds. The
+last screen stays visible and input is disabled until a fresh frame is rendered.
 
 A session connection owns its peer, rendered-frame state, and retry timer. Closing that
 view cancels retries and ignores late callbacks from the old connection. Protocol and
