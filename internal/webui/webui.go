@@ -10,9 +10,13 @@ import (
 var files embed.FS
 
 func Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+	page := func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFileFS(w, r, files, "dist/index.html")
-	})
+	}
+	// The client selects the view from these paths.
+	mux.HandleFunc("GET /{$}", page)
+	mux.HandleFunc("GET /sessions/{id}", page)
+	mux.HandleFunc("GET /settings", page)
 	mux.HandleFunc("GET /assets/{path...}", func(w http.ResponseWriter, r *http.Request) {
 		name := "dist/assets/" + r.PathValue("path")
 		file, err := files.Open(name)

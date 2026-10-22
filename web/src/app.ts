@@ -11,8 +11,10 @@ import { sessionGroups } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
+import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 
 const elements = {
+  'home-link': element('home-link', HTMLAnchorElement),
   'sessions-open': element('sessions-open', HTMLButtonElement),
   'archives-open': element('archives-open', HTMLButtonElement),
   'list-heading': element('list-heading', HTMLElement),
@@ -108,7 +110,7 @@ const preparation = new PreparationEditor({
   changed(session) {
     if (selected?.id === session.id) {
       selected = { ...selected, ...session };
-      $('session-title').textContent = session.title || 'Untitled draft';
+      heading(session.title || 'Untitled draft');
       $('workspace').textContent = session.workspace;
     }
     void refreshSessions();
@@ -128,6 +130,12 @@ function notice(text = '', source: typeof noticeSource = 'action') {
 
 function clearNotice(source: typeof noticeSource) {
   if (noticeSource === source) notice();
+}
+
+// Show the view name in the page heading and in the browser tab.
+function heading(title: string, tab = title) {
+  $('session-title').textContent = title;
+  document.title = tab;
 }
 
 function controls() {
@@ -299,7 +307,7 @@ async function refreshSessions() {
     clearNotice('list');
     if (selected && !showingSettings && !preparation.visible) {
       if (detail && selected.id === detail.id) selected = { ...selected, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
-      $('session-title').textContent = selected.title || 'Untitled session';
+      heading(selected.title || 'Untitled session');
       $('workspace').textContent = selected.workspace;
       $('workspace').title = selected.workspace;
     }
@@ -406,13 +414,13 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   $('welcome').hidden = true;
   $('session-view').hidden = false;
   const preparing = session.status === 'draft' && !start;
-  $('session-title').textContent = session.title || (preparing ? 'Untitled draft' : 'Untitled session');
+  heading(session.title || (preparing ? 'Untitled draft' : 'Untitled session'));
   $('workspace').textContent = session.workspace;
   $('workspace').title = session.workspace;
   $('session-id').textContent = session.id || '';
   $('status').hidden = false;
   $('status').textContent = 'Connecting';
-  history.replaceState(null, '', session.id ? `#${encodeURIComponent(session.id)}` : '');
+  history.replaceState(null, '', sessionURL(session.id ?? ''));
   $('terminal-pane').hidden = preparing;
   sessionSplit.setEnabled(false);
   if (preparing && session.id) {
@@ -454,7 +462,7 @@ async function openSession(session: SessionView, start = false): Promise<void> {
           $('terminal-hint').textContent = message.active ?
             'Click the terminal to type. Ctrl+C reaches the application.' : 'Recorded output only. No process was started.';
           view.options.disableStdin = true;
-          history.replaceState(null, '', `#${encodeURIComponent(message.session)}`);
+          history.replaceState(null, '', sessionURL(message.session));
           refreshSessions();
           view.focus();
           break;
@@ -499,6 +507,7 @@ async function showLaunch(projectId: string): Promise<void> {
 
 async function showWelcome(): Promise<void> {
   await leaveView();
+  settingsView.close(); showingSettings = false;
   await preparation.close();
   await composer.select('');
   selected = null;
@@ -506,10 +515,22 @@ async function showWelcome(): Promise<void> {
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
   $('welcome').hidden = false;
-  $('session-title').textContent = 'Your workspace';
+  heading('Your workspace', 'BonBon');
   $('workspace').textContent = 'A home for your terminal sessions.';
   $('status').hidden = true;
-  history.replaceState(null, '', location.pathname);
+  history.replaceState(null, '', homePath);
+  renderSessions();
+}
+
+async function showSettings(): Promise<void> {
+  await leaveView();
+  await settingsView.open();
+  showingSettings = true;
+  $('session-view').hidden = $('welcome').hidden = true;
+  heading('Settings');
+  $('workspace').textContent = 'Defaults and tools for this instance';
+  $('status').hidden = true;
+  history.replaceState(null, '', settingsPath);
 }
 
 function showProject(project: Project | null = null) {
@@ -553,19 +574,17 @@ async function initialize() {
   }
   $('sessions-previous').onclick = () => action(async () => { pageOffset = Math.max(0, pageOffset - pageSize); await refreshSessions(); });
   $('sessions-next').onclick = () => action(async () => { pageOffset += pageSize; await refreshSessions(); });
-  $('settings-open').onclick = () => action(async () => {
-    await leaveView();
-    await settingsView.open();
-    showingSettings = true;
-    $('session-view').hidden = $('welcome').hidden = true;
-    $('session-title').textContent = 'Settings';
-    $('workspace').textContent = 'Defaults and tools for this instance';
-    $('status').hidden = true;
-  });
+  $('home-link').onclick = event => {
+    // Keep a plain click in this page so drafts save. Let modified clicks open a new tab.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void action(showWelcome);
+  };
+  $('settings-open').onclick = () => action(showSettings);
   $('settings-close').onclick = () => action(async () => {
     settingsView.close(); showingSettings = false;
     if (selected) await openSession(selected);
-    else { $('welcome').hidden = false; $('session-title').textContent = 'Your workspace'; $('workspace').textContent = 'A home for your terminal sessions.'; }
+    else await showWelcome();
   });
   $('remove-worktree').onclick = () => action(async () => {
     if (!server || !selected?.id) return;
@@ -659,8 +678,9 @@ async function initialize() {
     $('instance-dir').textContent = server.dataDir;
     $('instance-dir').title = server.dataDir;
     await refreshSessions();
-    const id = decodeURIComponent(location.hash.slice(1));
-    if (id) await action(() => openSession(sessions.find(s => s.id === id) || { id, title: 'Session', workspace: '', status: 'unknown' }));
+    const route = parseRoute(location.pathname);
+    if (route.page === 'settings') await action(showSettings);
+    else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }));
     setInterval(() => { if (!document.hidden && !busy) refreshSessions(); }, 5000);
   } catch (error) {
     server = null;
