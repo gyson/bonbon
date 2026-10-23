@@ -15,8 +15,8 @@ const cells = view => Array.from({ length: view.rows }, (_, y) => {
 
 test('server frames match raw PTY rendering in real xterm.js', async () => {
   const steps = JSON.parse(await readFile(new URL('./testdata/server-frames.json', import.meta.url), 'utf8'));
-  const reference = new xterm.Terminal({ cols: 28, rows: 8, scrollback: 2000, allowProposedApi: true });
-  const rendered = new xterm.Terminal({ cols: 120, rows: 30, scrollback: 2000, allowProposedApi: true });
+  const reference = new xterm.Terminal({ cols: 28, rows: 8, scrollback: 10000, allowProposedApi: true });
+  const rendered = new xterm.Terminal({ cols: 120, rows: 30, scrollback: 10000, allowProposedApi: true });
   let resolveFrame;
   const stream = new TerminalStream(rendered, {
     current: () => true, acknowledge: () => resolveFrame(), ready() {}, fail: error => assert.fail(error),

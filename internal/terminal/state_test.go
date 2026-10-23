@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"bonbon/internal/history"
 	"bonbon/internal/protocol"
@@ -53,7 +55,7 @@ func TestRenderTracksScreenAcrossRedrawResizeAndScroll(t *testing.T) {
 	}
 	// Scroll far past the retained history, including skipped render opportunities.
 	for i := 0; i < 8; i++ {
-		apply("output", []byte(strings.Repeat(fmt.Sprintf("line %d: café 你好\r\n", i), 400)))
+		apply("output", []byte(strings.Repeat(fmt.Sprintf("line %d: café 你好\r\n", i), Scrollback/7)))
 	}
 	apply("output", []byte("\x1b[3J\x1b[2J\x1b[Hclear\r\n"))
 	apply("output", []byte("\x1bcreset\r\n"))
@@ -156,7 +158,7 @@ func TestViewerProjectionDoesNotResizeSharedTerminal(t *testing.T) {
 	state.Apply(history.Event{Kind: "output", Data: []byte("one\r\ntwo\r\nabcdef\r\nx你好\r\nlast")})
 	original := state.term.String()
 	display := xterm.New(xterm.WithCols(4), xterm.WithRows(3), xterm.WithScrollback(Scrollback))
-	view := state.ViewFor(protocol.Size{Cols: 4, Rows: 3})
+	view := state.ViewFor(protocol.Size{Cols: 4, Rows: 3}, nil)
 	data, _ := view.Render(nil)
 	display.Write(data)
 	if got := visibleText(display.String()); got != "abcd\nx你\nlast" {
@@ -169,14 +171,134 @@ func TestViewerProjectionDoesNotResizeSharedTerminal(t *testing.T) {
 		t.Fatal("viewer changed the shared terminal")
 	}
 	state.Apply(history.Event{Kind: "output", Data: []byte("\rnew\x1b[K")})
-	next := state.ViewFor(view.Size)
+	next := state.ViewFor(view.Size, nil)
 	data, _ = next.Render(view)
 	display.Write(data)
 	if got := visibleText(display.String()); got != "abcd\nx你\nnew" {
 		t.Fatalf("viewer delta: %q", got)
 	}
-	large := state.ViewFor(protocol.Size{Cols: 12, Rows: 8})
+	large := state.ViewFor(protocol.Size{Cols: 12, Rows: 8}, nil)
 	if len(large.Lines) != 8 || !strings.Contains(large.Lines[2], "abcdef") || !strings.Contains(large.Lines[4], "new") {
 		t.Fatalf("larger viewer: %+v", large)
+	}
+}
+
+// frameMessage returns the protocol message size of a frame.
+func frameMessage(t *testing.T, view *View, data []byte, full bool) int {
+	t.Helper()
+	message, err := json.Marshal(protocol.Message{Type: "frame", Data: data, Size: view.Size, Revision: 1, Full: full})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(message)
+}
+
+func TestHistoryBudgetKeepsNewestRows(t *testing.T) {
+	state := New(protocol.Size{Cols: 160, Rows: 10})
+	// Each row has about 3 KiB of styles. The budget keeps fewer rows than Scrollback.
+	write := func(from, to int) {
+		var out strings.Builder
+		for i := from; i < to; i++ {
+			fmt.Fprintf(&out, "row %06d ", i)
+			for x := 0; x < 140; x++ {
+				fmt.Fprintf(&out, "\x1b[38;2;%d;%d;%dm%c", i%256, x, (i+x)%256, 'a'+x%26)
+			}
+			out.WriteString("\x1b[0m\r\n")
+		}
+		if _, err := state.Apply(history.Event{Kind: "output", Data: []byte(out.String())}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(0, 4000)
+	view := state.View()
+	bytes := 0
+	for _, row := range view.History {
+		bytes += rowCost(row)
+	}
+	if bytes > historyBudget || bytes < historyBudget-8<<10 || len(view.History) >= 3990 {
+		t.Fatalf("history kept %d rows and %d bytes", len(view.History), bytes)
+	}
+	if last := view.History[len(view.History)-1]; !strings.Contains(last, "row 003990") {
+		t.Fatalf("newest history row: %.40q", last)
+	}
+	if view.Offset+int64(len(view.History)) != state.trim+int64(state.term.NormalBuffer().YBase) {
+		t.Fatal("history does not end at the screen")
+	}
+	if data, full := view.Render(nil); frameMessage(t, view, data, full) > 16<<20 {
+		t.Fatal("full frame exceeds the message limit")
+	}
+	// New rows push old rows out of the budget. This is not a history clear.
+	write(4000, 4001)
+	next := state.View()
+	if data, full := next.Render(view); full || next.Offset <= view.Offset || !strings.Contains(string(data), "row 003991") {
+		t.Fatalf("incremental frame: full=%v offset %d -> %d", full, view.Offset, next.Offset)
+	}
+	// A burst larger than the budget replaces the baseline with a frame that fits.
+	write(4001, 7000)
+	burst := state.View()
+	data, full := burst.Render(next)
+	if !full || frameMessage(t, burst, data, full) > 16<<20 || !strings.Contains(string(data), "row 006990") {
+		t.Fatalf("burst frame: full=%v", full)
+	}
+}
+
+func TestFramesFitTheMessageLimit(t *testing.T) {
+	// Large styled screen rows leave room for only some history rows.
+	view := &View{Size: protocol.Size{Cols: 512, Rows: 256}}
+	for y := 0; y < 256; y++ {
+		view.Lines = append(view.Lines, fmt.Sprintf("screen %d ", y)+strings.Repeat("\x1b[1my", 7000))
+	}
+	for i := 0; i < 400; i++ {
+		view.History = append(view.History, fmt.Sprintf("row %d ", i)+strings.Repeat("\x1b[1mx", 4000))
+	}
+	data, full := view.Render(nil)
+	text := string(data)
+	if !full || len(data) > frameLimit || frameMessage(t, view, data, full) > 16<<20 {
+		t.Fatalf("full frame has %d bytes", len(data))
+	}
+	if !strings.Contains(text, "row 399 ") || strings.Contains(text, "row 0 ") || !strings.Contains(text, "screen 255 ") {
+		t.Fatal("full frame must keep the screen and the newest history rows")
+	}
+	// Too many added rows for one message produce a full frame that fits.
+	previous := &View{Size: view.Size, Lines: view.Lines, History: view.History[:1]}
+	data, full = view.Render(previous)
+	if !full || len(data) > frameLimit || !strings.Contains(string(data), "row 399 ") {
+		t.Fatalf("large update: full=%v, %d bytes", full, len(data))
+	}
+}
+
+func TestNarrowViewCacheMatchesFreshRender(t *testing.T) {
+	state := New(protocol.Size{Cols: 40, Rows: 6})
+	size := protocol.Size{Cols: 16, Rows: 4}
+	var cache Cache
+	check := func(step string) *View {
+		t.Helper()
+		cached := state.ViewFor(size, &cache)
+		if fresh := state.ViewFor(size, nil); !reflect.DeepEqual(cached, fresh) {
+			t.Fatalf("%s: cached view differs from a fresh view", step)
+		}
+		return cached
+	}
+	apply := func(kind, data string) {
+		t.Helper()
+		if _, err := state.Apply(history.Event{Kind: kind, Data: []byte(data)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply("output", strings.Repeat("a long line that the narrow view crops\r\n", 50))
+	first := check("initial rows")
+	// Without new output, the next frame reuses the rendered rows.
+	if again := check("no output"); unsafe.StringData(again.History[0]) != unsafe.StringData(first.History[0]) {
+		t.Fatal("narrow view rendered cached rows again")
+	}
+	apply("output", "one more row\r\n")
+	check("one new row")
+	apply("resize", `{"cols":30,"rows":6}`)
+	check("resize")
+	apply("output", strings.Repeat("scroll past the limit\r\n", Scrollback+50))
+	check("trimmed rows")
+	apply("output", "\x1b[3J\x1b[2J\x1b[Hcleared\r\n")
+	if view := check("history clear"); len(view.History) != 2 {
+		t.Fatalf("history after clear: %q", view.History)
 	}
 }

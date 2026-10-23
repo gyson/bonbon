@@ -254,8 +254,9 @@ SQLite. The server answers terminal queries even when no client is attached.
 
 Stopped sessions retain a derived final screen in SQLite. The server reconstructs
 recordings that have no final screen. Ended views retain their recorded size and styles.
-Views retain up to 2,000 normal-screen scrollback rows. Erased content and exited
-alternate screens may only remain in the original archive.
+Views retain up to 10,000 normal-screen scrollback rows and up to 8 MiB of rendered
+rows. Rows with many colors or styles use more space, so fewer rows remain. Erased
+content and exited alternate screens may only remain in the original archive.
 
 Terminal sizes are bounded to 2–512 columns and 1–256 rows. Advanced graphics,
 hyperlinks and extended keyboard protocols are not forwarded to the view. Use

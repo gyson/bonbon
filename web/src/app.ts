@@ -343,7 +343,7 @@ function makeTerminal(): Terminal {
   terminal?.dispose();
   $('terminal').replaceChildren();
   const view = terminal = new Terminal({
-    cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 2000,
+    cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 10000,
     fontFamily: 'Menlo, Monaco, Consolas, monospace', disableStdin: true, screenReaderMode: true,
     theme: { background: '#18201e', foreground: '#d7e4dc', cursor: '#b8dcc3', selectionBackground: '#486e59' },
     // Terminal output must not open links, read the browser clipboard, or write to it.
