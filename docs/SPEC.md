@@ -265,6 +265,17 @@ The sidebar lists saved projects and groups sessions, including drafts, in pages
 through `project-list` and `session-list`. General appears first. Custom projects follow
 in name order. Groups can be collapsed in each view.
 
+A vertical divider on the right edge of the sidebar changes its width. Drag it with a
+mouse or touch. Or focus it and use Left/Right to resize. Use Home/End to reach the
+limits. A double-click restores the default width. The default width is 278 pixels, or
+240 pixels below a window width of 950 pixels. The width stays from 240 to 480 pixels,
+and the main area keeps at least 400 pixels.
+
+The toolbar button at the left of the session title hides or shows the sidebar.
+Command-B does the same on macOS. Ctrl+B stays available to terminal programs. Width
+and visibility stay with the browser view across session switches and reset on reload.
+Below 620 pixels, the sidebar is above the main area and the divider is not available.
+
 Server-side search matches project names and paths, or session titles, workspaces, and
 IDs, before pagination. It uses SQLite's case-insensitive ASCII matching and treats
 wildcard characters literally. This UI does not search message or terminal contents.
