@@ -254,15 +254,21 @@ Frame dimensions match that view's viewport. Smaller views crop columns and keep
 bottom screen rows visible, placing clipped top rows in scrollback. Larger views pad
 unused space. This projection never changes the shared emulator's size or wrapping.
 
-The first frame is always full. It contains up to 2,000 normal-buffer scrollback rows
+A view keeps the newest scrollback rows that fit in 8 MiB of rendered data. A frame
+contains at most 11 MiB of rendered data, so it stays below the 16 MiB message limit
+after base64 encoding. A full frame always contains the visible screen. It omits the
+oldest scrollback rows that do not fit.
+
+The first frame is always full. It contains up to 10,000 normal-buffer scrollback rows
 and the current visible screen, including an active alternate screen. It has rendered
 cell styles, cursor position and supported input modes. Clients reset their view and
 apply the frame's dimensions before parsing a full frame. Later frames contain only
 changed rows, scrollback additions and input-mode/cursor updates.
 
-A resize, history clear or incompatible baseline produces another full frame. The
-display uses positioned rows. It does not reproduce application scroll regions, source
-escape sequences, hyperlinks, clipboard requests, or native process state.
+A resize, history clear, incompatible baseline, or update larger than the frame limit
+produces another full frame. The display uses positioned rows. It does not reproduce
+application scroll regions, source escape sequences, hyperlinks, clipboard requests, or
+native process state.
 
 Each view has its own baseline and at most one outstanding frame. After you render the
 frame, acknowledge its revision. The server computes the next frame from the latest

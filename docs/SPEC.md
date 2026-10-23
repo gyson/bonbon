@@ -444,11 +444,17 @@ view cancels retries and ignores late callbacks from the old connection. Protoco
 instance mismatches require explicit recovery. A changed server port requires reopening
 the UI. Input and session creation are never retried automatically.
 
-The server sends a full current screen and up to 2,000 normal-buffer scrollback rows,
+The server sends a full current screen and up to 10,000 normal-buffer scrollback rows,
 then generated row changes. Each frame is acknowledged after xterm finishes parsing it.
 Each view has at most one outstanding frame, so slow rendering coalesces intermediate
 redraws while capture continues. Partial source escape sequences and UTF-8 remain inside
 the server's emulator. Clients receive complete render operations.
+
+A view keeps at most 8 MiB of rendered scrollback rows, so rows with many styles lower
+the row count. A frame carries at most 11 MiB of rendered data. A full frame always
+includes the visible screen and omits the oldest rows that do not fit. A view narrower
+than the terminal keeps its own cache of cropped rows. Each of its frames renders only
+new rows.
 
 Frames preserve visible cells, colors, cursor position, bracketed paste, application
 cursor/keypad and mouse modes. Advanced terminal graphics and extended keyboard
@@ -847,9 +853,10 @@ or tampered metadata, protocol checks, idle peers, and shutdown with stalled vie
 
 Frame fixtures cover independent viewport sizes, size owner changes, input from every
 view, receipt routing, slow views, final-frame ordering, and ended-screen
-reconstruction. Cross-engine fixtures compare Go-generated frames with xterm.js for
-cells, styles, cursor, scrollback, resize, split escapes, Unicode, and alternate
-screens.
+reconstruction. Terminal tests cover the scrollback size budget, frames at the message
+limit, and the narrower-view row cache. Cross-engine fixtures compare Go-generated
+frames with xterm.js for cells, styles, cursor, scrollback, resize, split escapes,
+Unicode, and alternate screens.
 
 TypeScript fixtures cover reconnect delays, canceled retries, uncertain session starts,
 identity checks, binary input, and input guards for inactive views. They also cover

@@ -40,7 +40,8 @@ type attachment struct {
 	changed  chan struct{}         // Combines render requests. Excludes PTY events.
 	closed   chan struct{}
 	once     sync.Once
-	size     protocol.Size // Stores the viewport. Only the size owner resizes the PTY.
+	size     protocol.Size  // Stores the viewport. Only the size owner resizes the PTY.
+	history  terminal.Cache // Keeps rendered rows for a narrower viewport. Requires the session lock.
 }
 
 func (a *attachment) close() { a.once.Do(func() { close(a.closed); a.conn.Close() }) }
@@ -323,7 +324,7 @@ func (s *Server) attach(conn *protocol.Conn, r *runningSession, size protocol.Si
 			revision, ended, exit := r.revision, r.ended, r.exit
 			var next *terminal.View
 			if revision != sent || previous == nil {
-				next = r.terminal.ViewFor(a.size)
+				next = r.terminal.ViewFor(a.size, &a.history)
 			}
 			r.mu.Unlock()
 			if next != nil {
