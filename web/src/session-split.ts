@@ -1,3 +1,4 @@
+import { dragDivider } from './divider-drag.js';
 import { element } from './dom.js';
 
 export class SessionSplit {
@@ -7,26 +8,14 @@ export class SessionSplit {
   private readonly divider = element('session-divider', HTMLElement);
   // This preference belongs to the view. Session changes preserve it. Reload resets it.
   private height = 240;
-  private drag: { pointer: number; y: number; height: number } | null = null;
+  private readonly stopDrag: () => void;
 
   constructor() {
-    this.divider.onpointerdown = event => {
-      if (event.button !== 0 || !event.isPrimary || this.drag) return;
-      event.preventDefault();
-      this.divider.focus({ preventScroll: true });
-      this.drag = { pointer: event.pointerId, y: event.clientY, height: this.composer.getBoundingClientRect().height };
-      this.divider.setPointerCapture(event.pointerId);
-      document.body.classList.add('resizing-session');
-    };
-    this.divider.onpointermove = event => {
-      if (this.drag?.pointer !== event.pointerId) return;
-      this.resize(this.drag.height + this.drag.y - event.clientY);
-    };
-    this.divider.onpointerup = this.divider.onpointercancel = event => {
-      if (this.drag?.pointer === event.pointerId) this.stopDrag();
-    };
-    this.divider.onlostpointercapture = () => this.stopDrag();
-    window.addEventListener('blur', () => this.stopDrag());
+    // An upward drag makes the editor taller.
+    this.stopDrag = dragDivider(this.divider, 'y', 'resizing-session', {
+      start: () => this.composer.getBoundingClientRect().height,
+      move: (height, offset) => this.resize(height - offset),
+    });
     this.divider.onkeydown = event => {
       const bounds = this.bounds();
       if (!bounds) return;
@@ -50,13 +39,6 @@ export class SessionSplit {
     this.divider.hidden = !enabled;
     if (enabled) this.layout();
     else this.composer.style.removeProperty('flex-basis');
-  }
-
-  private stopDrag(): void {
-    const drag = this.drag;
-    this.drag = null;
-    if (drag && this.divider.hasPointerCapture(drag.pointer)) this.divider.releasePointerCapture(drag.pointer);
-    document.body.classList.remove('resizing-session');
   }
 
   private bounds(): { total: number; min: number; max: number } | null {

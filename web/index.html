@@ -9,7 +9,7 @@
   <script type="module" src="/assets/app.js"></script>
 </head>
 <body>
-  <aside class="sidebar">
+  <aside id="sidebar" class="sidebar">
     <a id="home-link" class="brand" href="/" title="Home" aria-label="BonBon home"><span class="brand-mark" aria-hidden="true"></span> BonBon <span class="local-label">LOCAL</span></a>
     <div class="session-scopes" aria-label="Session collection"><button id="sessions-open" aria-pressed="true">Sessions</button><button id="archives-open" aria-pressed="false">Archived</button></div>
     <label class="search-label"><span class="sr-only">Search projects and sessions</span><input id="filter" type="search" maxlength="200" placeholder="Search names and folders…"></label>
@@ -20,9 +20,11 @@
     <button id="settings-open">Settings</button>
     <div class="instance"><span id="connection" role="status">Connecting to server</span><span id="instance-dir" title="Instance directory"></span></div>
   </aside>
+  <div id="sidebar-divider" role="separator" tabindex="0" aria-label="Sidebar width" aria-orientation="vertical" aria-controls="sidebar" aria-valuemin="240" aria-valuemax="480" aria-valuenow="278" title="Drag to resize. Use Left and Right arrow keys when focused. Double-click to reset."></div>
   <main>
     <header class="toolbar">
-      <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div>
+      <div class="toolbar-title"><button id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" aria-keyshortcuts="Meta+B" title="Hide sidebar (⌘B)"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="sidebar-panel" d="M5.25 3.75h2.5v12.5h-2.5a2.5 2.5 0 0 1-2.5-2.5v-7.5a2.5 2.5 0 0 1 2.5-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M7.75 3.75v12.5"/></svg></button>
+        <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div></div>
       <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>

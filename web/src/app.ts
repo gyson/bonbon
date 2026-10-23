@@ -7,6 +7,7 @@ import './style.css';
 import { element } from './dom.js';
 import { Composer } from './composer.js';
 import { SessionSplit } from './session-split.js';
+import { Sidebar } from './sidebar.js';
 import { sessionGroups } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
@@ -101,6 +102,7 @@ const composer = new Composer({
   action,
 });
 const sessionSplit = new SessionSplit();
+new Sidebar();
 
 let showingSettings = false;
 const settingsView = new SettingsView(() => server);
