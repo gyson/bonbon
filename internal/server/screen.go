@@ -27,8 +27,11 @@ func (s *Server) saveScreen(r *runningSession) error {
 	_, err = s.store.Append(r.id, runID, "terminal-screen", data, "")
 	return err
 }
-func (s *Server) loadScreen(id string) (*terminal.View, error) {
-	data, err := s.store.LastEventData(id, "terminal-screen")
+
+// loadScreen returns the final view of one run. A session can have several runs, one
+// after another. Each run has its own terminal.
+func (s *Server) loadScreen(id, runID string) (*terminal.View, error) {
+	data, err := s.store.LastRunEventData(id, runID, "terminal-screen")
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +50,7 @@ func (s *Server) loadScreen(id string) (*terminal.View, error) {
 	state := terminal.New(protocol.Size{Cols: 80, Rows: 24})
 	var after int64
 	for {
-		events, err := s.store.TerminalPage(id, after, math.MaxInt64)
+		events, err := s.store.TerminalPage(id, runID, after, math.MaxInt64)
 		if err != nil {
 			return nil, err
 		}

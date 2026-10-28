@@ -116,6 +116,7 @@ func (s *Server) launchPrepared(ctx context.Context, id string, revision int64, 
 	if run.Title == "" {
 		run.Title = p.ToolName + " · " + filepath.Base(source)
 	}
+	run.Tool = p.ToolName
 	if err = s.store.SetLaunchWorkspace(id, run.Title, run.Workspace); err != nil {
 		return session, nil, err
 	}

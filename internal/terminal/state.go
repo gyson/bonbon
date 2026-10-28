@@ -329,6 +329,27 @@ func inputModes(t *xterm.Terminal) string {
 	return out.String()
 }
 
+// PlainText returns the history rows and screen lines without styles or escape
+// sequences, one row on each line. It is derived text for readers such as a new agent.
+// It removes trailing spaces and empty rows at the start and end.
+func (v *View) PlainText() string {
+	var rows []string
+	for _, row := range slices.Concat(v.History, v.Lines) {
+		var parser history.Text
+		rows = append(rows, strings.TrimRight(parser.Push([]byte(row)), " "))
+	}
+	for len(rows) > 0 && rows[0] == "" {
+		rows = rows[1:]
+	}
+	for len(rows) > 0 && rows[len(rows)-1] == "" {
+		rows = rows[:len(rows)-1]
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return strings.Join(rows, "\n") + "\n"
+}
+
 // Render compares the current view with the last acknowledged view. It generates
 // history scrolling from rendered rows. It does not copy PTY bytes. A reset or reflow
 // replaces the baseline.

@@ -25,11 +25,15 @@ type Control struct {
 	Ack func(error)
 }
 
-// Launch adds server-owned shell settings to a session request.
+// Launch adds server-owned shell settings to a session request. Tool, Continues, and
+// Handoff describe the run in its start event.
 type Launch struct {
 	protocol.Run
-	Shell string
-	Env   []string
+	Shell     string
+	Env       []string
+	Tool      string // The tool name, or Shell.
+	Continues string // The previous run of the same session, for a new terminal.
+	Handoff   string // The handoff folder that BonBon wrote for a new terminal.
 }
 
 // Run owns an agent PTY on the server. Terminal controls arrive from the client. The
@@ -77,7 +81,13 @@ func Run(ctx context.Context, store *history.Store, session history.Session, req
 		data, _ := json.Marshal(run)
 		return appendEvent("run", data, "")
 	}
-	metadata, _ := json.Marshal(map[string]any{"command": command, "startupCommand": request.Command, "workspace": session.Workspace, "cols": size.Cols, "rows": size.Rows})
+	start := map[string]any{"command": command, "startupCommand": request.Command, "workspace": session.Workspace, "cols": size.Cols, "rows": size.Rows}
+	for key, value := range map[string]string{"tool": request.Tool, "continues": request.Continues, "handoff": request.Handoff} {
+		if value != "" {
+			start[key] = value
+		}
+	}
+	metadata, _ := json.Marshal(start)
 	if err = appendEvent("start", metadata, ""); err != nil {
 		run.Status, run.Ended, run.Detail = "failed", history.Now(), err.Error()
 		return 1, errors.Join(err, status())

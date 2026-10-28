@@ -188,6 +188,11 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
 	case "session-resume":
 		s.resumeSession(conn, request.Session, request.Size)
+	case "session-handoff":
+		result, err := s.handoffInfo(request.Session)
+		s.reply(conn, result, err)
+	case "session-continue":
+		s.continueSession(ctx, conn, request)
 	case "session-list":
 		result, err := s.listSessions(history.SessionFilter{Limit: request.Limit, Offset: request.Offset, Archived: request.Archived, Query: request.Query})
 		s.reply(conn, result, err)

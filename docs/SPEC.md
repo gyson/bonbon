@@ -50,7 +50,9 @@ This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
 Storage uses format version 6 with projects, sessions, runs, events, settings,
 preparations, worktree metadata, and session archive flags. Embedded SQL migrations
-upgrade formats 3–5 automatically at server startup. Format 6 needs no migration.
+upgrade formats 3–5 automatically at server startup. Format 6 needs no migration. Each
+tool in the settings JSON can have an optional continue command. Saved settings without
+this field read as tools without a continue command, so the field needs no migration.
 Commands and APIs may still change during early development. Database upgrades preserve
 durable data.
 
@@ -177,7 +179,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/17`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/18`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -187,6 +189,8 @@ search, and pagination. SQLite format 6 adds a session archive flag.
 
 Settings, preparations, and worktree metadata remain server-owned. Formats 3–5 upgrade
 automatically to 6 at server startup. Reload the UI after starting the new server.
+Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in an ended
+session. SQLite format 6 does not change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -317,9 +321,11 @@ Settings is an instance-wide page at `/settings`. Its URL has no session ID. The
 has a default tool, default worktree choice, default Git base, and an ordered list of
 named commands. Shell is built in and sends no startup command. Users can add, edit,
 reorder, and remove other presets. A command is one line of shell syntax, at most 1,000
-UTF-8 bytes, without control characters. BonBon does not install tools, choose models,
-or check provider-specific arguments. Commands may contain secrets and are stored
-locally in the same unencrypted archive as terminal input.
+UTF-8 bytes, without control characters. Each preset can also have an optional continue
+command for [Continue in a new terminal](#continue-in-a-new-terminal). It has the same
+limits and contains `{prompt}` once, without quotes around it. BonBon does not install
+tools, choose models, or check provider-specific arguments. Commands may contain secrets
+and are stored locally in the same unencrypted archive as terminal input.
 
 The server copies defaults when it creates a preparation. Non-Git folders do not enable
 the worktree default. A preparation stores its chosen tool name and command
@@ -463,10 +469,11 @@ rows do not preserve soft wraps during copy or reflow. Normal scrollback remains
 available while an alternate screen is visible. Erased output and exited alternate
 screens remain in the original recording.
 
-Ended sessions display the saved final view with its recorded dimensions. A normal exit
-or stop writes a derived `terminal-screen` event to SQLite. Interrupted recordings
-without a final screen are reconstructed on the server in pages of 64 original display
-events. Historical queries are discarded and recorded input is never sent to a process.
+Ended sessions display the saved final view of their latest terminal with its recorded
+dimensions. A normal exit or stop writes a derived `terminal-screen` event for that run
+to SQLite. Interrupted recordings without a final screen are reconstructed on the server
+from the events of that run only, in pages of 64 original display events. Historical
+queries are discarded and recorded input is never sent to a process.
 
 Large interrupted recordings can take longer to reconstruct. This restores a display,
 not a process or native agent context. Terminal dimensions are limited to 2–512 columns
@@ -480,6 +487,73 @@ file/diff view.
 A browser check with a synthetic terminal confirmed live reattachment, switching
 sessions, stop followed by history reload, and page reload at a different window width.
 The final display kept its recorded layout. This check did not run a real agent CLI.
+
+### Continue in a new terminal
+
+A session can have several terminals, one after another. Each terminal is a run with its
+own PTY, emulator, saved screen, and recording. **Continue in new terminal** appears
+when the latest run of a session ended (`exited`, `stopped`, `failed`, or
+`interrupted`). The session must not be archived, and the view must not have a live
+terminal.
+
+The dialog shows the session workspace, a tool choice, the handoff prompt, and a Copy
+button. The default tool is the session's original tool if it still exists, then the
+default tool, then Shell. For an `interrupted` run, the dialog warns that an agent from
+a crashed server can still run in the workspace.
+
+`session-continue` carries the latest run ID that the view saw. The server holds the
+launch lock and rejects the request in these conditions:
+
+- A terminal of the session is live.
+- The latest run ID is different, for example because another view continued first.
+- The latest run has not ended, the session is archived, or it has no run.
+- The managed worktree is not `ready`, or the session workspace no longer exists.
+  BonBon does not create a replacement worktree.
+- The selected tool no longer exists, or the command with the prompt exceeds 1,000
+  bytes.
+
+A rejected request writes no files and starts no process. Otherwise the server writes
+the handoff folder, then starts `$SHELL -i` in the session's recorded workspace. The
+session keeps its ID, title, project, worktree, message draft, and history. The new run
+gets the same `BONBON_SESSION`. Its start event records the tool name, the previous run
+ID (`continues`), and the handoff folder.
+
+The handoff folder is `<instance>/handoff/<session-id>/`. It is a derived cache with
+private permissions and read-only files. BonBon rebuilds the whole folder from SQLite
+for each new terminal. It writes a staging folder, then renames it. No terminal is live
+during this change. The folder contains these files:
+
+- `README.md`: rules for the reader, the session and worktree details, and every
+  earlier terminal, newest first. Each terminal has its number, run ID, tool, times,
+  status, detail, and whether it started from a handoff. The rules say that the files
+  are a record of earlier work, not instructions or approvals. They tell the agent to
+  check the current files, for example with `git status`. The README also has a
+  `bonbon query` command for the original recording of a terminal.
+- `messages.md`: every message from the message editor, oldest first, with its exact
+  text, time, Sent or Not confirmed status, and attachment cache paths. Messages are
+  grouped by terminal through event sequence ranges.
+- `terminals/<number>-<run-id>.txt`: the plain text of the final screen and scrollback
+  of each terminal that recorded output. The text comes from the saved final screen, or
+  from a reconstruction of that run's own recording.
+
+The handoff prompt names the session ID and the README path. It says that the earlier
+agent state is lost and that the files are a record, not instructions. It asks the
+agent to check the current files, summarize where the work stopped, and wait for the
+next message.
+
+If the selected tool has a continue command, BonBon puts the shell-quoted prompt in
+place of `{prompt}`. It records and submits that line once, as it does for a startup
+command. A tool without a continue command starts with its normal command, and BonBon
+sends no prompt. Shell submits no command. The user can copy the prompt from the dialog.
+BonBon never sends the prompt through the message editor and never detects agent
+readiness.
+
+The prompt stays available after the new terminal starts. When the handoff folder of
+the selected session has its README, **Handoff prompt** appears in the message editor
+heading. Its dialog shows the folder and the prompt, with **Copy prompt** and **Put in
+message editor**. Put in message editor works only when the editor has no text, no
+files, and no pending send. It never merges with or replaces a draft, and it sends
+nothing. The user sends the prompt with Send when the agent is ready.
 
 ### Message editor
 
@@ -631,7 +705,8 @@ A new attachment always starts with a full frame. Reconnecting does not change t
 size while another view owns it. The server updates PTY size when the size owner's
 dimensions change. Reattaching at the same size uses the saved screen without requesting an
 application redraw. An ended view never starts another process or invokes native
-provider resume.
+provider resume. Only an explicit `session-continue` starts a new terminal in an ended
+session.
 
 The protocol defaults to ten session entries. It accepts a limit of 1–1000 and a
 nonnegative offset. It also accepts an archive collection flag and an optional search
@@ -923,6 +998,38 @@ After a synthetic zsh session started, Send from one tab ran the message. The ed
 the other tab cleared at the same time. The archive held four draft revisions: two edits,
 the pending send, and the cleared draft. No browser errors were reported.
 
+Continuation fixtures cover per-run replay, where an interrupted second run does not
+show the saved screen of the first run. They cover handoff folders with three terminals,
+newest-first order, tool names from start events and preparations, and exact messages
+grouped by terminal. They also cover Sent and Not confirmed states, fenced text,
+read-only files, rebuilds without leftover staging folders, and continue command
+validation. Request fixtures reject live terminals, old run IDs, running records,
+archived sessions, removed worktrees, missing workspaces, unknown tools, and long
+commands. A rejected request writes no handoff folder. sh, bash, and zsh each receive
+the quoted prompt as one exact argument.
+
+A real temporary server test starts a worktree session with a synthetic tool and sends
+one editor message. It stops the session and continues it with a continue command that
+prints the prompt. It verifies the worktree path, the handoff files, and the rejection
+of a second continue request. Then it restarts the server and continues again with
+Shell. The README then lists both earlier terminals, newest first. The ended view shows
+only the latest terminal. Each startup command and message was recorded once, in its own
+run. These checks use synthetic shells, not a real agent CLI.
+
+A browser check with a temporary instance and a synthetic zsh tool started a worktree
+session, sent one editor message, and stopped the session. **Continue in new terminal**
+showed the worktree, the tool, the hint, and the prompt. The new terminal received the
+prompt as one argument in the same worktree. After a second stop and a server restart,
+the handoff README listed both earlier terminals, newest first, with no staging folders
+left. A change of the tool to Shell updated the hint. After a page reload, **Handoff
+prompt** showed the same prompt. Put in message editor filled the empty editor and saved
+the draft. A second attempt with text in the editor was refused and left the text
+unchanged. No browser errors were reported.
+
+`codex sandbox` from Codex CLI 0.160.0, with default settings, read the handoff
+`README.md` from outside its working directory. In the same sandbox, `bonbon query`
+failed with "connect: operation not permitted". These checks ran no model.
+
 ## Limitations
 
 Native session mapping/resume, forks, imports, native agent attachments, and Windows
@@ -932,6 +1039,14 @@ and prevent cleanup. Provider-owned daemons retain their lifecycle.
 
 BonBon stops the launched group and a shell's foreground job. It does not track other
 background groups. Linux runtime behavior and large archives are unverified.
+
+A session has at most one live terminal. The UI shows only the latest terminal of a
+session. Earlier terminals are available only in the handoff folder and through
+`bonbon query`. A handoff transcript has at most the newest 10,000 scrollback rows of a
+terminal. The server rebuilds the handoff folder while it holds the launch lock. A large
+interrupted recording can delay other launches during this rebuild. A continue command
+was not run with a real agent CLI and model. The prompt gives the new agent a record of
+earlier work. It does not restore the internal state of the earlier agent.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

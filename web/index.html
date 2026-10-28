@@ -25,7 +25,7 @@
     <header class="toolbar">
       <div class="toolbar-title"><button id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" aria-keyshortcuts="Meta+B" title="Hide sidebar (⌘B)"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="sidebar-panel" d="M5.25 3.75h2.5v12.5h-2.5a2.5 2.5 0 0 1-2.5-2.5v-7.5a2.5 2.5 0 0 1 2.5-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M7.75 3.75v12.5"/></svg></button>
         <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div></div>
-      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
+      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="continue-session" hidden title="Start a new terminal in this session. The new agent can read the earlier terminals.">Continue in new terminal</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>
     <section id="welcome" class="welcome">
@@ -59,7 +59,7 @@
       </div>
       <div id="session-divider" role="separator" tabindex="0" aria-label="Terminal size" aria-orientation="horizontal" aria-controls="terminal-pane" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65" title="Drag to resize. Use Up and Down arrow keys when focused." hidden><span aria-hidden="true"></span></div>
       <section id="composer" aria-label="Message editor">
-        <div class="composer-heading"><label for="composer-text">Compose a message</label><button id="composer-history" disabled>Sent messages</button></div>
+        <div class="composer-heading"><label for="composer-text">Compose a message</label><span class="composer-heading-actions"><button id="handoff-open" hidden title="Show the prompt that points an agent to the earlier terminals of this session.">Handoff prompt</button><button id="composer-history" disabled>Sent messages</button></span></div>
         <textarea id="composer-text" rows="4" placeholder="Write your request. Start the session when you’re ready…" spellcheck="true" aria-describedby="composer-help" disabled></textarea>
         <div id="composer-files" aria-label="Attached files"></div>
         <div class="composer-actions"><button id="composer-attach" disabled>＋ Attach files</button><input id="composer-picker" type="file" multiple hidden><span id="composer-status" role="status"></span><button id="composer-review" hidden>I checked the terminal · edit draft</button><button id="composer-submit" class="primary" disabled>Send ↵</button></div>
@@ -75,8 +75,8 @@
           <label>Default starting branch or commit<input id="settings-base" placeholder="HEAD" maxlength="250"></label>
           <p class="form-help">HEAD uses the project’s current commit. Uncommitted changes are not copied. Existing sessions keep their choices.</p>
         </section>
-        <section class="settings-card"><div class="settings-heading"><div><h3>Tools</h3><p>A name and the first command submitted to your shell.</p></div><button id="tool-add" type="button">＋ Add tool</button></div>
-          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers.</p>
+        <section class="settings-card"><div class="settings-heading"><div><h3>Tools</h3><p>A name, the first command submitted to your shell, and an optional continue command.</p></div><button id="tool-add" type="button">＋ Add tool</button></div>
+          <p class="form-help">Shell is always available and submits no command. Commands use your interactive shell’s syntax and can include model flags or wrappers. <strong>Continue in new terminal</strong> submits the continue command once. Write {prompt} once, without quotes, where the tool accepts its first prompt, for example <code>codex {prompt}</code>. BonBon quotes the handoff prompt. Without a continue command, BonBon starts the tool with its normal command and does not send the prompt.</p>
           <div id="settings-tools"></div>
         </section>
         <p id="settings-error" class="form-error" role="alert" hidden></p>
@@ -102,6 +102,27 @@
       <p id="rename-error" class="form-error" role="alert" hidden></p>
       <button id="rename-submit" type="submit" class="primary">Save title</button>
     </form>
+  </dialog>
+  <dialog id="continue-dialog" class="continue-dialog" aria-labelledby="continue-title">
+    <form id="continue-form">
+      <div class="dialog-heading"><div><span class="eyebrow">NEW TERMINAL</span><h2 id="continue-title">Continue in a new terminal</h2></div><button type="button" id="cancel-continue" class="text-button" aria-label="Close new terminal">✕</button></div>
+      <p class="form-help">BonBon starts a new terminal in this session. The session keeps its ID, workspace, message draft, and history. Before the start, BonBon writes a read-only handoff folder with the earlier terminals and your sent messages.</p>
+      <p id="continue-workspace" class="continue-path"></p>
+      <label>Tool<select id="continue-tool"></select></label>
+      <p id="continue-hint" class="form-help"></p>
+      <label>Handoff prompt<textarea id="continue-prompt" class="prompt-text" rows="6" readonly></textarea></label>
+      <p id="continue-warning" class="form-warning" role="alert" hidden>The latest terminal was interrupted. If the server stopped unexpectedly, its agent can still run and change files in this workspace. Check this before you continue.</p>
+      <p id="continue-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="continue-copy" type="button">Copy prompt</button><button id="continue-submit" type="submit" class="primary">Start new terminal ↗</button></div>
+    </form>
+  </dialog>
+  <dialog id="handoff-dialog" class="continue-dialog" aria-labelledby="handoff-title">
+    <div class="dialog-heading"><div><span class="eyebrow">MESSAGE EDITOR</span><h2 id="handoff-title">Handoff prompt</h2></div><button type="button" id="handoff-close" class="text-button" aria-label="Close handoff prompt">✕</button></div>
+    <p class="form-help">This prompt points an agent to the handoff folder of this session. The folder has the earlier terminals and your sent messages. BonBon rebuilds it each time you continue in a new terminal. Send the prompt when the agent is ready.</p>
+    <p id="handoff-folder" class="continue-path"></p>
+    <textarea id="handoff-text" class="prompt-text" rows="6" readonly aria-label="Handoff prompt"></textarea>
+    <p id="handoff-status" class="form-help" role="status"></p>
+    <div class="dialog-actions"><button id="handoff-copy" type="button">Copy prompt</button><button id="handoff-insert" type="button" class="primary">Put in message editor</button></div>
   </dialog>
   <dialog id="sent-dialog" class="sent-dialog" aria-labelledby="sent-title">
     <div class="dialog-heading"><div><span class="eyebrow">MESSAGE EDITOR</span><h2 id="sent-title">Sent messages</h2></div><button type="button" id="sent-close" class="text-button" aria-label="Close sent messages">✕</button></div>

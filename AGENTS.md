@@ -100,7 +100,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   command once through the shell. Keep message drafts separate. Resolve the shell from
   PATH or its configured absolute path. Do not search application bundles.
 - Preserve normal CLI arguments, terminal interaction, authentication, and permissions.
-  Do not inject prompts into a new wrapped run.
+  Do not inject prompts into a new wrapped run. The only exception is the handoff prompt
+  of Continue in new terminal. Submit it once, through the tool's continue command,
+  after the user sees it.
 - Keep General and custom project metadata in SQLite. Projects supply launch defaults.
   Sessions retain their actual workspace path. Project removal must preserve session
   history, files, and processes.
@@ -108,6 +110,9 @@ Keep deployment builds compatible with `CGO_ENABLED=0`.
   `./bin/bonbon ui`.
 - Click ＋ beside a project to create a new draft entry. Choose a tool or Shell. Select
   an optional worktree. Click Start session. Edit startup commands only in Settings.
+- After the latest terminal of a session ends, use Continue in new terminal. It starts a
+  new run in the same session and workspace. It first rebuilds a read-only handoff
+  folder with every earlier terminal. Allow one live terminal per session.
 - A closed tab leaves its view. The session and history capture continue. Use the UI's
   Stop session action to stop work. Archive hides drafts or finished sessions. Archived
   lets users find and restore them. Each session has one saved message editor. All views
@@ -234,10 +239,11 @@ added. Preserve them across database upgrades too.
 ### Workspaces and execution
 
 - A closed or detached session client must leave its process and capture active in the
-  server. Resume attaches to that process. Explicit session stop ends it. Server stop
-  and restart stop all owned sessions before the archive closes. History replay for
-  ended sessions and native agent resume are separate capabilities. Never claim terminal
-  recordings restore a live process or native model state.
+  server. Resume attaches to that process. Explicit session stop ends it. A new terminal
+  in an ended session is a fresh process with a handoff folder. It is not a resume.
+  Server stop and restart stop all owned sessions before the archive closes. History
+  replay for ended sessions and native agent resume are separate capabilities. Never
+  claim terminal recordings restore a live process or native model state.
 - Conversation forks and filesystem checkpoints are separate operations. Never claim an
   old transcript restores historical files.
 - Identify the commit or working state used for a worktree. Preserve selected local

@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/17`.
+This version uses protocol `bonbon/18`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -225,6 +225,21 @@ New sessions save their launch settings, message drafts, and attachments before 
 anything. **Start session** opens the terminal above the editor and submits only the
 startup command. **Send** explicitly pastes your composed message. Reopening never
 repeats a startup command. BonBon reports conflicting edits from another browser.
+
+**Continue in new terminal** appears after the latest terminal of a session ended, for
+example after **Stop session**, an agent exit, or a server restart. It starts a new
+terminal in the same session, workspace, and worktree. Only one terminal can be live.
+The session keeps its ID, message draft, and history.
+
+Before the start, BonBon writes a read-only handoff folder at
+`<instance>/handoff/<session-id>/`. It contains a README, the text of each earlier
+terminal, and the messages sent through the editor. BonBon rebuilds the folder from
+SQLite for each new terminal. A tool's optional **Continue command**, for example
+`codex {prompt}`, submits a short prompt that points the new agent to this folder.
+Without a continue command, BonBon starts the tool with its normal command. Copy the
+prompt from the dialog and send it when the agent is ready. Later, **Handoff prompt** in
+the message editor shows the prompt again. It can copy the prompt or put it in an empty
+editor. The new agent does not get the internal state of the earlier agent.
 
 **Remove worktree** is explicit. It refuses active sessions and modified, untracked, or
 ignored files, keeps the branch, and preserves history. Stopping a session or removing a

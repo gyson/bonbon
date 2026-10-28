@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/17';
+export const VERSION = 'bonbon/18';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -15,11 +15,16 @@ export interface ServerInfo {
 
 export interface Project { id: string; name: string; workspace: string; created: string }
 
-export interface Tool { id: string; name: string; command: string }
+// A continue command contains {prompt} once. BonBon puts the quoted handoff prompt there.
+export interface Tool { id: string; name: string; command: string; continueCommand?: string }
 export interface Settings { revision: number; defaultTool: string; worktree: boolean; base: string; tools: Tool[] }
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
-export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: { status: string } }
+export interface Run { id: string; status: string }
+export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
+// BonBon writes the handoff folder before it starts a new terminal in an ended session.
+// available means that the folder has a README, so the prompt can be used now.
+export interface Handoff { folder: string; prompt: string; available: boolean }
 export interface RepositoryInfo { available: boolean; root: string; head: string; branch: string; reason: string }
 
 export interface SessionInfo {
@@ -66,10 +71,13 @@ type InspectRequest = { operation: 'workspace-inspect'; workspace: string };
 type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
-type RPCRequest = ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type HandoffRequest = { operation: 'session-handoff'; session: string };
+type RPCRequest = HandoffRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
-  | { operation: 'session-resume'; session: string; size: Size };
+  | { operation: 'session-resume'; session: string; size: Size }
+  // latestRun is the latest run that this view saw. An empty tool selects Shell.
+  | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size };
 export type DraftWatchRequest = { operation: 'composer-watch'; session: string };
 export type Request = RPCRequest | StreamRequest | DraftWatchRequest;
 
@@ -252,6 +260,7 @@ export function call(server: ServerInfo, request: SettingsRequest): Promise<Sett
 export function call(server: ServerInfo, request: InspectRequest): Promise<RepositoryInfo>;
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;
 export function call(server: ServerInfo, request: RemoveWorktreeRequest): Promise<{ removed: boolean }>;
+export function call(server: ServerInfo, request: HandoffRequest): Promise<Handoff>;
 export function call(server: ServerInfo, request: ProjectListRequest): Promise<Project[]>;
 export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;

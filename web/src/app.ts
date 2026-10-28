@@ -1,5 +1,7 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
-import type { Project, Preparation, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Handoff, Project, Preparation, Run, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import { HandoffPrompt } from './handoff-prompt.js';
+import { canContinue, continueHint, defaultContinueTool } from './continue.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -52,6 +54,19 @@ const elements = {
   'notice': element('notice', HTMLElement),
   'stop': element('stop', HTMLButtonElement),
   'reconnect': element('reconnect', HTMLButtonElement),
+  'continue-session': element('continue-session', HTMLButtonElement),
+  'continue-dialog': element('continue-dialog', HTMLDialogElement),
+  'continue-form': element('continue-form', HTMLFormElement),
+  'continue-workspace': element('continue-workspace', HTMLElement),
+  'continue-tool': element('continue-tool', HTMLSelectElement),
+  'continue-hint': element('continue-hint', HTMLElement),
+  'continue-prompt': element('continue-prompt', HTMLTextAreaElement),
+  'continue-warning': element('continue-warning', HTMLElement),
+  'continue-error': element('continue-error', HTMLElement),
+  'continue-copy': element('continue-copy', HTMLButtonElement),
+  'continue-submit': element('continue-submit', HTMLButtonElement),
+  'cancel-continue': element('cancel-continue', HTMLButtonElement),
+  'handoff-open': element('handoff-open', HTMLButtonElement),
   'sessions': element('sessions', HTMLElement),
   'filter': element('filter', HTMLInputElement),
   'refresh': element('refresh', HTMLButtonElement),
@@ -74,12 +89,16 @@ interface SessionView {
   archived?: boolean;
   preparation?: Preparation;
   worktree?: Worktree;
+  run?: Run;
   projectId?: string;
   id?: string;
   title: string;
   workspace: string;
   status: string;
 }
+
+// start claims a prepared draft. continue starts a new terminal in an ended session.
+type Launch = { kind: 'start' } | { kind: 'continue'; tool: string };
 
 let server: ServerInfo | null = null;
 let connection: SessionConnection | null = null;
@@ -91,6 +110,10 @@ let editingProject: Project | null = null;
 const collapsedProjects = new Set<string>();
 let renderedSidebar = '';
 let selected: SessionView | null = null;
+let continueTools: Tool[] = [];
+// The handoff prompt of the selected session. It stays available after a new terminal
+// starts, so the user can copy or send it later.
+let handoff: { session: string; info: Handoff } | null = null;
 let busy = false, refreshing = false;
 let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -102,6 +125,7 @@ const composer = new Composer({
   action,
 });
 const sessionSplit = new SessionSplit();
+const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
 new Sidebar();
 
 let showingSettings = false;
@@ -118,7 +142,7 @@ const preparation = new PreparationEditor({
   },
   start: session => action(async () => {
     await composer.flush();
-    await openSession({ ...session, status: 'draft' }, true);
+    await openSession({ ...session, status: 'draft' }, { kind: 'start' });
   }),
 });
 
@@ -160,6 +184,10 @@ function controls() {
   $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active;
   $('reconnect').textContent = ['running', 'starting'].includes(selected?.status ?? '') ? 'Reconnect' : 'Reload output';
   $('reconnect').disabled = busy;
+  $('continue-session').hidden = showingSettings || !canContinue(selected, !!connection?.peer?.active);
+  $('continue-session').disabled = $('continue-submit').disabled = busy;
+  $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
+  $('handoff-open').disabled = busy;
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed';
@@ -381,8 +409,9 @@ async function leaveView() {
   if (terminal) terminal.options.disableStdin = true;
 }
 
-async function openSession(session: SessionView, start = false): Promise<void> {
+async function openSession(session: SessionView, launch?: Launch): Promise<void> {
   if (!server) throw new Error('The server is unavailable. Reload this page.');
+  const start = !!launch;
   if (!start && !showingSettings && selected?.id === session.id && connection?.peer?.active) {
     terminal?.focus();
     return;
@@ -422,8 +451,10 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   sessionSplit.setEnabled(true);
   const view = makeTerminal();
   let request: StreamRequest;
-  if (start && session.id && session.preparation) {
+  if (launch?.kind === 'start' && session.id && session.preparation) {
     request = { operation: 'session-start', session: session.id, revision: session.preparation.revision, size: size(view) };
+  } else if (launch?.kind === 'continue' && session.id && session.run) {
+    request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, size: size(view) };
   } else if (session.id) {
     request = { operation: 'session-resume', session: session.id, size: size(view) };
   } else {
@@ -448,7 +479,7 @@ async function openSession(session: SessionView, start = false): Promise<void> {
           $('session-id').textContent = message.session;
           $('status').textContent = 'Restoring';
           $('terminal-hint').textContent = message.active ?
-            'Click the terminal to type. Ctrl+C reaches the application.' : 'Recorded output only. No process was started.';
+            'Click the terminal to type. Ctrl+C reaches the application.' : 'Recorded output of the latest terminal. No process was started.';
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
           refreshSessions();
@@ -479,7 +510,49 @@ async function openSession(session: SessionView, start = false): Promise<void> {
   catch (error) {
     if (start && session.id) { await openSession(session); notice(errorMessage(error)); return; }
     throw error;
-  } finally { if (selected?.id) await composer.select(selected.id); }
+  } finally {
+    if (selected?.id) {
+      await composer.select(selected.id);
+      await loadHandoff(selected.id);
+    }
+  }
+}
+
+// A missing handoff only hides the button. It does not block the session view.
+async function loadHandoff(id: string): Promise<void> {
+  if (!server) return;
+  try {
+    const info = await call(server, { operation: 'session-handoff', session: id });
+    if (selected?.id === id) handoff = { session: id, info };
+  } catch { if (handoff?.session === id) handoff = null; }
+  controls();
+}
+
+async function showContinue(): Promise<void> {
+  if (!server || !selected?.id) return;
+  await composer.flush();
+  const id = selected.id;
+  const [detail, settings, handoff] = await Promise.all([
+    call(server, { operation: 'session-config', session: id }),
+    call(server, { operation: 'settings-get' }),
+    call(server, { operation: 'session-handoff', session: id }),
+  ]);
+  if (selected?.id !== id) return;
+  selected = { ...selected, ...detail, status: detail.run?.status ?? detail.preparation?.state ?? 'ended' };
+  if (!canContinue(selected, !!connection?.peer?.active)) {
+    notice('This session cannot start a new terminal now. Another view may have started one. Reload the session.');
+    return;
+  }
+  continueTools = settings.tools;
+  $('continue-tool').replaceChildren(new Option('Shell', ''), ...settings.tools.map(tool => new Option(tool.name || 'Unnamed tool', tool.id)));
+  $('continue-tool').value = defaultContinueTool(settings.tools, selected.preparation?.toolId, settings.defaultTool);
+  $('continue-hint').textContent = continueHint(continueTools.find(tool => tool.id === $('continue-tool').value));
+  $('continue-prompt').value = handoff.prompt;
+  $('continue-workspace').textContent = selected.worktree ? `⑂ ${selected.worktree.branch} · ${selected.workspace}` : selected.workspace;
+  $('continue-warning').hidden = selected.status !== 'interrupted';
+  $('continue-error').hidden = true;
+  $('continue-copy').textContent = 'Copy prompt';
+  $('continue-dialog').showModal();
 }
 
 async function showLaunch(projectId: string): Promise<void> {
@@ -642,6 +715,35 @@ async function initialize() {
     searchTimer = setTimeout(() => { void refreshSessions(); }, 200);
   };
   $('reconnect').onclick = () => action(async () => { if (selected) await openSession(selected); });
+  $('continue-session').onclick = () => action(showContinue);
+  $('handoff-open').onclick = () => action(async () => {
+    if (!selected?.id) return;
+    await loadHandoff(selected.id);
+    if (handoff?.session === selected.id && handoff.info.available) handoffPrompt.open(handoff.info);
+    else notice('The handoff folder of this session is not available. Continue in a new terminal to write it again.');
+  });
+  $('cancel-continue').onclick = () => $('continue-dialog').close();
+  $('continue-tool').oninput = () => {
+    $('continue-hint').textContent = continueHint(continueTools.find(tool => tool.id === $('continue-tool').value));
+  };
+  $('continue-copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText($('continue-prompt').value);
+      $('continue-copy').textContent = 'Copied';
+    } catch (error) {
+      $('continue-error').textContent = `Cannot copy the prompt: ${errorMessage(error)}`;
+      $('continue-error').hidden = false;
+    }
+  };
+  $('continue-form').onsubmit = event => {
+    event.preventDefault();
+    action(async () => {
+      if (!selected?.id) return;
+      const tool = $('continue-tool').value;
+      $('continue-dialog').close();
+      await openSession(selected, { kind: 'continue', tool });
+    });
+  };
   $('stop').onclick = () => action(async () => {
     if (!server || !selected?.id) return;
     await call(server, { operation: 'session-stop', session: selected.id });

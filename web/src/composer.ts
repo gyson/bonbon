@@ -32,6 +32,15 @@ export function composeInput(text: string, files: Attachment[], bracketed: boole
   return (bracketed ? `\x1b[200~${paste}\x1b[201~` : paste) + '\r';
 }
 
+// Text goes into the editor only when the editor is empty and no send is pending. This
+// never merges with or replaces a draft.
+export function insertProblem(state: { loaded: boolean; pending: boolean; text: string; files: number }): string | undefined {
+  if (!state.loaded) return 'The message editor is not ready.';
+  if (state.pending) return 'A send may have reached the terminal. Check the terminal and unlock the draft first.';
+  if (state.text.trim() || state.files) return 'The message editor already has a draft. Send or clear it first, or copy the prompt.';
+  return undefined;
+}
+
 interface Host {
   server(): ServerInfo | null;
   peer(): Peer | null;
@@ -110,6 +119,17 @@ export class Composer {
     this.review.disabled = unavailable;
     this.history.disabled = unavailable || !this.session;
     for (const button of this.files.querySelectorAll('button')) button.disabled = unavailable || this.state.draft.pending;
+  }
+
+  // Put text in the editor as a normal edit. The user still decides when to send it.
+  insert(text: string): string | undefined {
+    const problem = this.blocked ? 'Wait for the current action to finish.' :
+      insertProblem({ loaded: this.loaded, pending: this.state.draft.pending, text: this.text.value, files: this.state.attachments.length });
+    if (problem) return problem;
+    this.text.value = this.state.draft.text = text;
+    this.changed();
+    this.text.focus();
+    return undefined;
   }
 
   private message(text: string, error = false): void {

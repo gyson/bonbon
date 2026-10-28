@@ -97,26 +97,36 @@ func (s *Server) sentMessages(sid string, before int64) (protocol.SentPage, erro
 		return page, err
 	}
 	for _, sent := range drafts {
-		var draft protocol.Draft
-		if err = json.Unmarshal(sent.Data, &draft); err != nil {
-			return page, fmt.Errorf("read draft revision %d: %w", sent.Seq, err)
-		}
-		message := protocol.SentMessage{Revision: sent.Seq, Created: sent.Created, Text: draft.Text, Attachments: []protocol.Attachment{}}
-		for _, id := range draft.Attachments {
-			attachment, err := s.attachment(sid, id, false)
-			if err != nil {
-				return page, err
-			}
-			message.Attachments = append(message.Attachments, attachment)
-		}
-		var next protocol.Draft
-		if sent.Next != nil && json.Unmarshal(sent.Next, &next) == nil {
-			message.Confirmed = !next.Pending && next.Text == "" && len(next.Attachments) == 0
+		message, err := s.sentMessage(sid, sent, false)
+		if err != nil {
+			return page, err
 		}
 		page.Messages = append(page.Messages, message)
 	}
 	page.More = more
 	return page, nil
+}
+
+// sentMessage converts one pending draft revision. With restore, it also writes the
+// attachment cache files, so that their paths can be read.
+func (s *Server) sentMessage(sid string, sent history.SentDraft, restore bool) (protocol.SentMessage, error) {
+	var draft protocol.Draft
+	if err := json.Unmarshal(sent.Data, &draft); err != nil {
+		return protocol.SentMessage{}, fmt.Errorf("read draft revision %d: %w", sent.Seq, err)
+	}
+	message := protocol.SentMessage{Revision: sent.Seq, Created: sent.Created, Text: draft.Text, Attachments: []protocol.Attachment{}}
+	for _, id := range draft.Attachments {
+		attachment, err := s.attachment(sid, id, restore)
+		if err != nil {
+			return message, err
+		}
+		message.Attachments = append(message.Attachments, attachment)
+	}
+	var next protocol.Draft
+	if sent.Next != nil && json.Unmarshal(sent.Next, &next) == nil {
+		message.Confirmed = !next.Pending && next.Text == "" && len(next.Attachments) == 0
+	}
+	return message, nil
 }
 
 // A draft watcher keeps only the newest draft. A slow view never queues old revisions.

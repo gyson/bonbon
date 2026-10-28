@@ -117,6 +117,39 @@ func (s *Store) LatestRun(id string) (*Run, error) {
 	return &r, err
 }
 
+// RunRecord describes one run of a session. First and Last are the sequence numbers of
+// its first and last events, or zero when it has no events. Start holds the data of its
+// start event.
+type RunRecord struct {
+	Run
+	First int64
+	Last  int64
+	Start []byte
+}
+
+// Runs returns the runs of a session in start order. A session has one live run at most.
+// Later runs continue the same session in a new terminal.
+func (s *Store) Runs(sid string) ([]RunRecord, error) {
+	rows, err := s.db.Query(`SELECT runs.id,runs.session_id,status,started,ended,pid,detail,
+        COALESCE(MIN(events.seq),0),COALESCE(MAX(events.seq),0),
+        COALESCE((SELECT data FROM events WHERE session_id=runs.session_id AND run_id=runs.id AND kind='start' ORDER BY seq LIMIT 1),x'')
+        FROM runs LEFT JOIN events ON events.session_id=runs.session_id AND events.run_id=runs.id
+        WHERE runs.session_id=? GROUP BY runs.id ORDER BY runs.rowid`, sid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []RunRecord
+	for rows.Next() {
+		var r RunRecord
+		if err = rows.Scan(&r.ID, &r.SessionID, &r.Status, &r.Started, &r.Ended, &r.PID, &r.Detail, &r.First, &r.Last, &r.Start); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) CreateSession(title, workspace, projectID string) (Session, error) {
 	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now(), ProjectID: projectID}
 	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created,project_id) VALUES(?,?,?,?,NULLIF(?,''))", session.ID, session.Title, session.Workspace, session.Created, projectID)
