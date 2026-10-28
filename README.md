@@ -234,12 +234,24 @@ The session keeps its ID, message draft, and history.
 Before the start, BonBon writes a read-only handoff folder at
 `<instance>/handoff/<session-id>/`. It contains a README, the text of each earlier
 terminal, and the messages sent through the editor. BonBon rebuilds the folder from
-SQLite for each new terminal. A tool's optional **Continue command**, for example
-`codex {prompt}`, submits a short prompt that points the new agent to this folder.
-Without a continue command, BonBon starts the tool with its normal command. Copy the
-prompt from the dialog and send it when the agent is ready. Later, **Handoff prompt** in
-the message editor shows the prompt again. It can copy the prompt or put it in an empty
-editor. The new agent does not get the internal state of the earlier agent.
+SQLite for each new terminal. A tool's optional **Continue command** submits a short
+prompt that points the new agent to this folder. Without a continue command, BonBon
+starts the tool with its normal command. Copy the prompt from the dialog and send it
+when the agent is ready. Later, **Handoff prompt** in the message editor shows the
+prompt again. It can copy the prompt or put it in an empty editor. The new agent does
+not get the internal state of the earlier agent.
+
+A transcript keeps only the last screen of a program that uses the alternate screen.
+Run agents in the normal screen to keep their full output in the handoff folder. These
+settings passed a live check:
+
+| Tool | Command | Continue command |
+| --- | --- | --- |
+| Codex CLI 0.160.0 | `codex --no-alt-screen` | `codex --no-alt-screen {prompt}` |
+| Claude Code 2.1.312 | `claude` | `claude {prompt}` |
+
+Codex uses the alternate screen by default. Do not turn on the fullscreen renderer of
+Claude Code.
 
 **Remove worktree** is explicit. It refuses active sessions and modified, untracked, or
 ignored files, keeps the branch, and preserves history. Stopping a session or removing a

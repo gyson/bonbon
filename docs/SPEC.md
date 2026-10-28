@@ -1030,6 +1030,32 @@ unchanged. No browser errors were reported.
 `README.md` from outside its working directory. In the same sandbox, `bonbon query`
 failed with "connect: operation not permitted". These checks ran no model.
 
+A live check used a temporary instance, a Git worktree session, and the real agent
+CLIs with models. The server started with a clean environment that had only `HOME`,
+`PATH`, and a plain zsh. One session had six terminals:
+
+1. Codex CLI 0.160.0 got a task from the message editor. It wrote a codename into an
+   uncommitted file.
+2. A continue with `codex {prompt}` started Codex with the prompt as its first message.
+   Codex reported the codename and the uncommitted file, then waited.
+3. A continue with the Claude CLI that is bundled in the desktop app stopped at its
+   login screen.
+4. A continue with `codex --no-alt-screen {prompt}` read the README, `messages.md`, and
+   the transcript of terminal 3. It ran `git status`, `git log`, and `git diff`, and
+   summarized all earlier terminals.
+5. A Shell continue only rebuilt the handoff folder.
+6. A continue with `claude {prompt}` and Claude Code 2.1.312 summarized terminals 1–5
+   and the uncommitted file, then waited.
+
+Neither agent asked for approval to read the handoff folder. Claude ran in its auto
+permission mode, which allowed the reads. Its default permission mode was not checked.
+Codex uses the alternate screen by default. The transcript of terminal 1 kept only its
+last 12 lines. With `--no-alt-screen`, the transcript of terminal 4 kept the full
+output, including each command. Claude Code ran in the normal screen, and its transcript
+kept the full reply, with some repeated rows from dialog redraws. The agents also showed
+their own folder trust questions and, for Codex, a shared background server question.
+These are agent behavior, not BonBon behavior.
+
 ## Limitations
 
 Native session mapping/resume, forks, imports, native agent attachments, and Windows
@@ -1041,12 +1067,14 @@ BonBon stops the launched group and a shell's foreground job. It does not track 
 background groups. Linux runtime behavior and large archives are unverified.
 
 A session has at most one live terminal. The UI shows only the latest terminal of a
-session. Earlier terminals are available only in the handoff folder and through
-`bonbon query`. A handoff transcript has at most the newest 10,000 scrollback rows of a
+session. Earlier terminals are available only in the handoff folder and through `bonbon
+query`. A handoff transcript has at most the newest 10,000 scrollback rows of a
 terminal. The server rebuilds the handoff folder while it holds the launch lock. A large
-interrupted recording can delay other launches during this rebuild. A continue command
-was not run with a real agent CLI and model. The prompt gives the new agent a record of
-earlier work. It does not restore the internal state of the earlier agent.
+interrupted recording can delay other launches during this rebuild. A transcript keeps
+only the last screen of a program that uses the alternate screen, such as Codex CLI
+0.160.0 without `--no-alt-screen`. The session header shows the tool of the original
+launch, also after a continue with another tool. The prompt gives the new agent a record
+of earlier work. It does not restore the internal state of the earlier agent.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

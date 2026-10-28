@@ -52,8 +52,13 @@ Continue in new terminal is implemented. See
 
 - Show the earlier terminals of a session in the UI. Now only the handoff folder and
   `bonbon query` give access to them.
-- Verify a continue command for each agent CLI version before you recommend it,
-  including Claude Code. Check that each agent sandbox can read the handoff folder.
+- Mark a terminal in the handoff README when it used the alternate screen, so a reader
+  knows that its transcript is incomplete.
+- Show the tool of the latest terminal in the session header. Now it shows the tool of
+  the original launch.
+- Check the default permission mode of Claude Code, where it may ask before it reads the
+  handoff folder. Verify a continue command for each other agent CLI version before you
+  recommend it.
 - Evaluate continuation results. Then decide whether a session-scoped history command or
   a summary is necessary.
 
