@@ -45,6 +45,23 @@ implemented. See [SPEC.md](SPEC.md#projects-and-launches).
   failed.
 - Verify development use does not modify production data.
 
+## Continuation follow-ups
+
+Continue in new terminal is implemented. See
+[SPEC.md](SPEC.md#continue-in-a-new-terminal). The following work remains.
+
+- Show the earlier terminals of a session in the UI. Now only the handoff folder and
+  `bonbon query` give access to them.
+- Mark a terminal in the handoff README when it used the alternate screen, so a reader
+  knows that its transcript is incomplete.
+- Show the tool of the latest terminal in the session header. Now it shows the tool of
+  the original launch.
+- Check the default permission mode of Claude Code, where it may ask before it reads the
+  handoff folder. Verify a continue command for each other agent CLI version before you
+  recommend it.
+- Evaluate continuation results. Then decide whether a session-scoped history command or
+  a summary is necessary.
+
 ## Custom context
 
 Status: deferred. Design a complete feature to add, edit, and apply custom context to

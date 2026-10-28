@@ -13,8 +13,9 @@ func (s *Store) Append(sid, rid, kind string, data []byte, text string) (Event, 
 	return e, err
 }
 
-func (s *Store) LastEventData(session, kind string) ([]byte, error) {
-	rows, err := s.db.Query("SELECT data FROM events WHERE session_id=? AND kind=? ORDER BY seq DESC LIMIT 1", session, kind)
+// LastRunEventData returns the data of the latest event of one kind in one run.
+func (s *Store) LastRunEventData(session, run, kind string) ([]byte, error) {
+	rows, err := s.db.Query("SELECT data FROM events WHERE session_id=? AND run_id=? AND kind=? ORDER BY seq DESC LIMIT 1", session, run, kind)
 	if err != nil {
 		return nil, err
 	}

@@ -42,11 +42,11 @@ body.resizing-sidebar, body.resizing-sidebar * { cursor: col-resize !important; 
 #sidebar-toggle[aria-expanded="true"] .sidebar-panel { fill: currentColor; opacity: .3; }
 main { min-width: 0; flex: 1; display: flex; flex-direction: column; overflow: auto; }
 .toolbar { min-height: 96px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 22px 30px; border-bottom: 1px solid #e6e8e3; }
-.toolbar-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.toolbar-title { display: flex; align-items: center; gap: 12px; min-width: 180px; }
 .session-heading { min-width: 0; }
 h1 { margin: 0 0 7px; font-size: 18px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #workspace { margin: 0; color: #80867e; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.actions { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; font-size: 12px; }
 .badge { font-size: 10px; text-transform: uppercase; letter-spacing: .7px; color: #477257; background: #e8eee7; border-radius: 5px; padding: 6px 9px; }
 .welcome { margin: auto; padding: 60px 40px; max-width: 760px; width: 100%; }
 .eyebrow { font-size: 10px; letter-spacing: 1.7px; color: #62816c; font-weight: 600; }
@@ -148,7 +148,7 @@ form input, form textarea, form select { margin-top: 8px; font-weight: 400; }
 .launch-grid .wide { grid-column: 1 / -1; }
 label.checkbox { display: flex; align-items: center; gap: 10px; }
 .checkbox input { width: 17px; height: 17px; margin: 0; accent-color: #2d5b47; }
-.tool-row label:nth-child(2) input { font-family: ui-monospace, monospace; font-size: 12px; }
+.tool-row label:nth-child(2) input, .tool-row label:nth-child(3) input { font-family: ui-monospace, monospace; font-size: 12px; }
 .launch-actions { display: flex; justify-content: space-between; align-items: center; gap: 20px; border-top: 1px solid #eef0eb; padding-top: 12px; }
 #launch-submit { width: auto; }
 #settings-view { padding: 30px; overflow: auto; flex: 1; }
@@ -159,10 +159,17 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .settings-card h3 { margin: 0 0 20px; font-size: 15px; font-weight: 600; }
 .settings-card > label { margin: 16px 0; max-width: 440px; }
 .settings-card .settings-heading h3 { margin-bottom: 8px; }
-.tool-row { border-top: 1px solid #edf0e9; display: grid; grid-template-columns: 1fr 2fr auto; gap: 14px; padding: 18px 0; align-items: end; }
+.tool-row { border-top: 1px solid #edf0e9; display: grid; grid-template-columns: 1fr 2fr 2fr auto; gap: 14px; padding: 18px 0; align-items: end; }
 .tool-actions { display: flex; gap: 5px; }
 .tool-actions button { padding: 9px; font-size: 12px; }
 .settings-save { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
 @media (max-width: 950px) { .tool-row { grid-template-columns: 1fr; } .tool-actions { justify-content: flex-end; } }
 @media (max-width: 620px) { #preparation { padding: 18px; flex: none; } .launch-grid { grid-template-columns: 1fr; } .preparation-heading, .launch-actions { flex-wrap: wrap; } #settings-view { padding: 16px; } #session-view:has(#preparation:not([hidden])) { height: auto; } }
 #launch-summary { margin: 6px 0 0; font-family: ui-monospace, monospace; font-size: 10px; color: #62816c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.continue-dialog { width: 620px; }
+.continue-dialog .form-help { margin: 0 0 14px; }
+.continue-path { margin: 0 0 18px; font-family: ui-monospace, monospace; font-size: 11px; color: #62816c; overflow-wrap: anywhere; }
+.prompt-text { font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; resize: vertical; background: #f6f8f4; }
+.composer-heading-actions { display: flex; gap: 8px; }
+#handoff-status { margin: 10px 0; min-height: 1.7em; }
+.form-warning { color: #87591c; background: #fbf0d9; border-radius: 7px; padding: 10px 12px; font-size: 12px; line-height: 1.6; }

@@ -217,13 +217,55 @@ func TestEndedScreenCacheAndArchiveReconstruction(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		view, err := s.loadScreen(session.ID)
+		view, err := s.loadScreen(session.ID, "run")
 		if err != nil {
 			t.Fatal(err)
 		}
 		data, _ := view.Render(nil)
 		if !strings.Contains(string(data), "Answer: café 你好") || strings.Contains(string(data), "Working") || strings.Contains(string(data), "NEVER REPLAY") || strings.Contains(string(data), "[6n") {
 			t.Fatalf("cached=%v: %q", cached, data)
+		}
+	}
+}
+
+// Each run has its own terminal. An interrupted later run must not show the saved
+// screen of an earlier run, and replay must not mix the output of two runs.
+func TestEachRunReplaysOnlyItsOwnTerminal(t *testing.T) {
+	store, err := history.Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	session, err := store.CreateSession("fixture", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: store}
+	first := &runningSession{id: session.ID, terminal: terminal.New(protocol.Size{Cols: 30, Rows: 6})}
+	for _, event := range []history.Event{{Kind: "start", Data: []byte(`{"cols":30,"rows":6}`)}, {Kind: "output", Data: []byte("FIRST TERMINAL\r\n")}} {
+		recorded, err := store.Append(session.ID, "first", event.Kind, event.Data, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		first.publish(recorded)
+	}
+	if err = s.saveScreen(first); err != nil {
+		t.Fatal(err)
+	}
+	// The second run has no saved screen, as after a server crash.
+	for _, event := range []history.Event{{Kind: "start", Data: []byte(`{"cols":40,"rows":5}`)}, {Kind: "output", Data: []byte("SECOND TERMINAL\r\n")}} {
+		if _, err := store.Append(session.ID, "second", event.Kind, event.Data, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, check := range []struct{ run, want, other string }{{"first", "FIRST TERMINAL", "SECOND"}, {"second", "SECOND TERMINAL", "FIRST"}} {
+		view, err := s.loadScreen(session.ID, check.run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := view.Render(nil)
+		if !strings.Contains(string(data), check.want) || strings.Contains(string(data), check.other) {
+			t.Fatalf("run %s: %q", check.run, data)
 		}
 	}
 }

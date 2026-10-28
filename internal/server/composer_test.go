@@ -66,7 +66,7 @@ func TestComposerPersistsDraftAndOriginalFileWithoutCache(t *testing.T) {
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("lost original file: %x, %v", got, err)
 	}
-	if events, err := s.store.TerminalPage(id, 0, restored.Draft.Revision); err != nil || len(events) != 0 {
+	if events, err := s.store.TerminalPage(id, "", 0, restored.Draft.Revision); err != nil || len(events) != 0 {
 		t.Fatal("draft or upload entered terminal replay", events, err)
 	}
 	cleared, err := s.composer(id, &protocol.Draft{Revision: restored.Draft.Revision, Attachments: []int64{}})

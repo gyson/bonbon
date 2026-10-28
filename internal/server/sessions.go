@@ -242,14 +242,15 @@ func (s *Server) resumeSession(conn *protocol.Conn, id string, size protocol.Siz
 		s.reply(conn, nil, err)
 		return
 	}
-	status := "ended"
+	status, runID := "ended", ""
 	if session.Run != nil {
-		status = session.Run.Status
+		status, runID = session.Run.Status, session.Run.ID
 	}
 	if err = conn.Send(protocol.Message{Type: "session", Session: id, Status: status}); err != nil {
 		return
 	}
-	view, err := s.loadScreen(id)
+	// Show the latest terminal. Earlier terminals stay in history.
+	view, err := s.loadScreen(id, runID)
 	if err != nil {
 		s.reply(conn, nil, err)
 		return
@@ -410,7 +411,8 @@ func (s *Server) listSessions(filter history.SessionFilter) ([]protocol.SessionI
 		if r := s.running(session.ID); r != nil {
 			r.mu.Lock()
 			info.Viewers = len(r.clients)
-			if !r.ended && session.Run == nil {
+			// A new terminal has no run record until its process starts.
+			if !r.ended && (session.Run == nil || endedRun[session.Run.Status]) {
 				info.Status = "starting"
 			}
 			r.mu.Unlock()

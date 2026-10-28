@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/17`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/18`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/17",
+    "protocol": "bonbon/18",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/17",
+    "protocol": "bonbon/18",
     "operation": "session-list",
     "limit": 10
   }
@@ -99,6 +99,8 @@ operations.
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
 | `session-resume` | `session` ID and `size` | `session`, then a terminal stream or recorded history |
+| `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
+| `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
 
 Ordinary operations send one reply, then close the connection. Replies use
 `{"type":"result","result":...}` or `{"type":"error","error":"..."}`. RPC requests have
@@ -143,6 +145,11 @@ drafts. The SQLite format does not change.
 Protocol 17 adds the read-only `composer-sent` operation. It lists the messages that the
 message editor sent. The SQLite format does not change.
 
+Protocol 18 adds `session-handoff` and `session-continue`. A session can now have
+several runs, one after another. Each run has its own terminal. Ended views show the
+latest run. Tools in settings can have an optional `continueCommand`. The SQLite format
+does not change.
+
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
 
@@ -183,9 +190,11 @@ redraw.
 
 Settings contain revision, defaultTool (empty means Shell), worktree, base (default
 HEAD), and an ordered tools array. Each tool has a stable client-generated id, name, and
-command. Saving requires the current revision. Removing a default tool requires
-selecting another default in the same save. These operations do not install or
-authenticate tools.
+command. A tool can also have a `continueCommand`. It has the same limits as a command
+and contains `{prompt}` once, without quotes around it. An empty value removes it.
+Saving requires the current revision. Removing a default tool requires selecting
+another default in the same save. These operations do not install or authenticate
+tools.
 
 A prepared session includes preparation with revision, state, toolId, toolName, command,
 worktree, base, and branch. Configuration saves send the current preparation revision
@@ -205,6 +214,32 @@ remains interrupted after restart and must not be automatically retried.
 
 After a lost start response, query session-config or session-list. Use session-resume to
 join its process or read history. Never repeat startup input.
+
+## New terminals in ended sessions
+
+`session-continue` starts a new run in an ended session. The session keeps its ID,
+workspace, worktree, message draft, and history. Send the ID of the latest run from
+session-config as `latestRun`. The server holds the launch lock and rejects the request
+when a terminal is live, when `latestRun` is not the latest run, or when that run has
+not ended. It also rejects archived sessions, sessions without a run, a managed worktree
+that is not `ready`, a missing workspace, and an unknown tool.
+
+A rejected request writes no files and starts no process. A repeated request with the
+same `latestRun` fails after the first request started a terminal. After a lost
+response, read session-config. If its latest run changed, use session-resume to join
+the new terminal. Do not send session-continue again only because a response was lost.
+
+Before the process starts, the server rebuilds `<instance>/handoff/<session-id>/` from
+SQLite. It contains `README.md`, `messages.md`, and `terminals/<number>-<run-id>.txt`
+for each earlier terminal with output. `session-handoff` returns this folder and the
+prompt that points to it, without side effects. Its `available` field is true when the
+folder has its `README.md`. Clients use it to show the prompt again after the new
+terminal started.
+
+A tool with a `continueCommand` gets the shell-quoted prompt in place of `{prompt}`. The
+server records and submits that line once. A tool without one submits its normal
+`command`. Shell submits nothing. The start event of the new run records `tool`,
+`continues` (the previous run ID), and `handoff` (the folder).
 
 Managed worktree metadata includes path, repository, requested base, resolved commit,
 creation branch, and state (creating, ready, failed, or removed). Creation uses the
@@ -291,8 +326,8 @@ its original verified instance. If the server port changes, reopen the UI. Durin
 shutdown, the server allows connections up to five seconds to receive completion. Then
 it closes them.
 
-Ended sessions send one full frame, wait for its acknowledgment, then send
-`history-end`. Normal completion stores a derived final view in a versioned
+Ended sessions send one full frame of their latest run, wait for its acknowledgment,
+then send `history-end`. Normal completion stores a derived final view in a versioned
 `terminal-screen` SQLite event. Without that cache, the server emulates the original
 recording in bounded pages. Opening history never starts a process or sends recorded
 input. The browser retains the recorded dimensions and styles.
@@ -371,13 +406,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/17") {
+    if (message.server.protocol !== "bonbon/18") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/17", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/18", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

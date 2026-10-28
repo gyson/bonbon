@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/17"
+const Version = "bonbon/18"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -51,6 +51,8 @@ type Request struct {
 	Instance    string             `json:"instance,omitempty"`
 	SQL         string             `json:"sql,omitempty"`
 	Session     string             `json:"session,omitempty"`
+	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
+	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
@@ -106,6 +108,15 @@ type SentMessage struct {
 type SentPage struct {
 	Messages []SentMessage `json:"messages"`
 	More     bool          `json:"more"`
+}
+
+// Handoff identifies the folder that BonBon writes before it starts a new terminal in
+// an ended session, and the prompt that points a new agent to it. Available reports
+// that the folder has a README, so the prompt can be used now.
+type Handoff struct {
+	Folder    string `json:"folder"`
+	Prompt    string `json:"prompt"`
+	Available bool   `json:"available"`
 }
 
 type SessionInfo struct {

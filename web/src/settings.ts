@@ -52,7 +52,10 @@ export class SettingsView {
     for (const row of this.tools.querySelectorAll<HTMLElement>('.tool-row')) {
       const preset = this.settings.tools.find(tool => tool.id === row.dataset.id);
       const fields = row.querySelectorAll('input');
-      if (preset && fields[0] && fields[1]) { preset.name = fields[0].value; preset.command = fields[1].value; }
+      if (preset && fields[0] && fields[1] && fields[2]) {
+        preset.name = fields[0].value; preset.command = fields[1].value;
+        if (fields[2].value.trim()) preset.continueCommand = fields[2].value; else delete preset.continueCommand;
+      }
     }
   }
 
@@ -65,13 +68,15 @@ export class SettingsView {
       this.tool.add(new Option(preset.name || 'Unnamed tool', preset.id));
       const row = document.createElement('div');
       row.className = 'tool-row'; row.dataset.id = preset.id;
-      for (const [label, value, placeholder, max] of [
-        ['Name', preset.name, 'Codex 6 Astra', 200],
-        ['Command', preset.command, 'codex --model=gpt-6-astra', 1000],
+      for (const [label, value, placeholder, max, required] of [
+        ['Name', preset.name, 'Codex 6 Astra', 200, true],
+        ['Command', preset.command, 'codex --model=gpt-6-astra', 1000, true],
+        ['Continue command', preset.continueCommand ?? '', 'codex --model=gpt-6-astra {prompt}', 1000, false],
       ] as const) {
         const field = document.createElement('label'); field.textContent = label;
-        const input = document.createElement('input'); input.value = value; input.placeholder = placeholder; input.maxLength = max; input.required = true;
-        if (label === 'Command') input.spellcheck = false;
+        if (!required) { const optional = document.createElement('span'); optional.className = 'optional'; optional.textContent = 'optional'; field.append(optional); }
+        const input = document.createElement('input'); input.value = value; input.placeholder = placeholder; input.maxLength = max; input.required = required;
+        if (label !== 'Name') input.spellcheck = false;
         input.oninput = () => { this.capture(); const option = Array.from(this.tool.options).find(option => option.value === preset.id); if (option) option.textContent = preset.name || 'Unnamed tool'; };
         field.append(input); row.append(field);
       }
