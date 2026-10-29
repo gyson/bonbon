@@ -208,6 +208,20 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "query":
 		result, err := s.store.Query(ctx, request.SQL)
 		s.reply(conn, result, err)
+	case "history-search":
+		if request.Search == nil {
+			s.reply(conn, nil, errors.New("missing history search"))
+			return
+		}
+		result, err := s.store.Search(ctx, *request.Search)
+		s.reply(conn, result, err)
+	case "history-context":
+		if request.Context == nil {
+			s.reply(conn, nil, errors.New("missing history context"))
+			return
+		}
+		result, err := s.store.SearchContext(ctx, *request.Context)
+		s.reply(conn, result, err)
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)

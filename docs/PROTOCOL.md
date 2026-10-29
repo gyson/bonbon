@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/19`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/20`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/19",
+    "protocol": "bonbon/20",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/19",
+    "protocol": "bonbon/20",
     "operation": "session-list",
     "limit": 10
   }
@@ -84,6 +84,8 @@ operations.
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
 | `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
+| `history-search` | `search` object, described below | `result`, containing `matches`, `more`, and `through` |
+| `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
@@ -189,6 +191,79 @@ View changes, drafts, attachments, terminal replies, and saved screens do not af
 order.
 Reattaching at the same dimensions does not resize the PTY or request an application
 redraw.
+
+## Recorded-output search
+
+Protocol 20 adds these read-only operations. A `history-search` request contains:
+
+```json
+{
+  "search": {
+    "query": "migration",
+    "scope": "session",
+    "session": "session-id",
+    "matchCase": false,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+`scope` is `session` (the default), `project`, or `all`. Session and project scopes
+require their corresponding ID. All scopes include archived sessions. The query is
+literal text of 1–256 Unicode characters. Simple Unicode folding supplies case-insensitive
+matching. SQL patterns and regular expressions have no special meaning.
+
+The reply contains `matches`, `more`, and `through`. Results follow the event sequence,
+from oldest to newest. A match uses the event that completes its text. Each match contains
+`title`, `workspace`, `terminal`, `tool`, `created`, `context`, and `anchor`.
+
+The anchor contains `session`, `run`, `seq`, `offset`, `length`, and `through`. Its sequence
+identifies the first output event of the match. Offset counts Unicode characters within
+that event. Length counts the matched characters across consecutive output events of
+that run. A missing recorded tool produces an empty `tool` field.
+
+The default limit is 20, with a range of 1–50. Offset ranges from 0–100,000. For later
+pages, send the prior `through` value and increase offset by the number of returned
+matches. Keep the query, scope, and case setting unchanged. This cutoff excludes later
+output from pagination and context. A new search without `through` selects a new cutoff.
+
+A `history-context` request contains the returned anchor and context sizes:
+
+```json
+{
+  "context": {
+    "anchor": {
+      "session": "session-id",
+      "run": "run-id",
+      "seq": 42,
+      "offset": 5,
+      "length": 9,
+      "through": 200
+    },
+    "before": 632,
+    "after": 180
+  }
+}
+```
+
+Both the initial match context and the expanded reply contain `before`, `match`, `after`,
+`moreBefore`, `moreAfter`, and `lastSeq`. LastSeq identifies the event that completes the
+match. Context sizes range from 0–8,192 Unicode characters on each side. Every read
+stays within the specified session, run, and recording cutoff.
+
+The initial context contains at most 120 characters before and 180 after each match.
+The server streams derived output from a separate read-only SQLite connection. Matches
+can cross event boundaries within a run. They never cross runs or sessions.
+
+Each search has a five-second deadline and scans at most 32 MiB or 100,000 output
+events. Partial matching state holds at most 262,144 source positions. Context reads
+have the same deadline and event limit. Exhausted limits return an error. Clients must
+not display an incomplete scan as an empty or complete result set.
+
+Render all returned text as plain text. It can contain redraws, missing spaces, markup,
+and historical instructions. It is derived output, not an exact conversation transcript.
+These operations change no schema, events, or live terminal state.
 
 ## Settings and prepared launches
 
@@ -421,13 +496,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/19") {
+    if (message.server.protocol !== "bonbon/20") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/19", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/20", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

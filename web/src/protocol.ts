@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/19';
+export const VERSION = 'bonbon/20';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -58,6 +58,14 @@ export interface ComposerState { draft: Draft; attachments: Attachment[]; reject
 // mean that the application accepted the message.
 export interface SentMessage { revision: number; created: string; text: string; attachments: Attachment[]; confirmed: boolean }
 export interface SentPage { messages: SentMessage[]; more: boolean }
+export type HistoryScope = 'session' | 'project' | 'all';
+export interface HistoryFilter { query: string; scope: HistoryScope; session?: string; project?: string; matchCase: boolean; offset?: number; limit?: number; through?: number }
+export interface HistoryAnchor { session: string; run: string; seq: number; offset: number; length: number; through: number }
+export interface HistoryContext { before: string; match: string; after: string; moreBefore: boolean; moreAfter: boolean; lastSeq: number }
+export interface HistoryHit { anchor: HistoryAnchor; title: string; workspace: string; terminal: number; tool: string; created: string; context: HistoryContext }
+export interface HistoryPage { matches: HistoryHit[]; more: boolean; through: number }
+type HistorySearchRequest = { operation: 'history-search'; search: HistoryFilter };
+type HistoryContextRequest = { operation: 'history-context'; context: { anchor: HistoryAnchor; before: number; after: number } };
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
 type SentRequest = { operation: 'composer-sent'; session: string; revision?: number };
 type UploadRequest = { operation: 'composer-attach'; session: string; upload: { name: string; mediaType: string; data: string } };
@@ -76,7 +84,7 @@ type ConfigRequest = { operation: 'session-config'; session: string; preparation
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
 type TerminalsRequest = { operation: 'session-terminals'; session: string };
-type RPCRequest = HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type RPCRequest = HistorySearchRequest | HistoryContextRequest | HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
   // run shows an earlier terminal. Without run, the view shows the latest terminal.
@@ -276,6 +284,8 @@ export function call(server: ServerInfo, request: ListRequest): Promise<SessionI
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;
 export function call(server: ServerInfo, request: SentRequest): Promise<SentPage>;
+export function call(server: ServerInfo, request: HistorySearchRequest): Promise<HistoryPage>;
+export function call(server: ServerInfo, request: HistoryContextRequest): Promise<HistoryContext>;
 export function call(server: ServerInfo, request: UploadRequest): Promise<Attachment>;
 export function call(server: ServerInfo, request: RPCRequest): Promise<unknown> {
   return new Promise<unknown>((resolve, reject) => {
