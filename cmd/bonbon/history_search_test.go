@@ -49,7 +49,7 @@ func TestHistorySearchEarlierTerminalsWhileLatestKeepsRunning(t *testing.T) {
 	if len(firstPage.Matches) != 1 || !firstPage.More || firstPage.Matches[0].Terminal != 1 || !strings.Contains(firstPage.Matches[0].Context.After, "oldest") {
 		t.Fatal(firstPage)
 	}
-	filter.Offset, filter.Through = 1, firstPage.Through
+	filter.Cursor, filter.Through = firstPage.Cursor, firstPage.Through
 	rpc(protocol.Request{Operation: "history-search", Search: &filter}, &secondPage)
 	if len(secondPage.Matches) != 1 || secondPage.More || secondPage.Matches[0].Terminal != 2 || secondPage.Matches[0].Anchor.Seq <= firstPage.Matches[0].Anchor.Seq {
 		t.Fatal(secondPage)

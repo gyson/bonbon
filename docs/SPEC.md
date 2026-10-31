@@ -512,26 +512,45 @@ Original events remain unchanged. There is no persistent search index or schema 
 
 Results follow recording order, from oldest to newest. A match uses the event that
 completes its text. Each result identifies its session, terminal number, recorded tool,
-and time. A missing tool name appears as **Tool not recorded**. The initial page has
-at most 20 results. **Show more results** appends the next page below them.
+and time. Search and the terminal selector use the same tool-name fallback.
+For an older first terminal without a recorded tool, they use the saved preparation.
+Other missing names appear as **Tool not recorded**. The initial page has at most 20 results.
+**Show more results** appends the next page below them.
 
 The status says **results loaded** while more matches remain. Otherwise, it reports the
 final count and hides that button.
 
 The first page fixes the highest event sequence. Later pages and context reads use that
 same cutoff, so new output does not move existing results. A new search includes later
-output. Pagination rescans that fixed prefix. Each page scans at most 32 MiB or 100,000
-output events, with a five-second timeout. Exhausted limits fail explicitly.
+output. Each page scans at most 32 MiB or 100,000 nonempty output events, with a
+five-second deadline. Empty text does not consume the event limit.
 
-The service bounds partial-match storage to 262,144 source positions. Requests allow at
-most 50 results and a result offset of 100,000. Search limits do not report incomplete
-scans as complete results. Large-archive performance remains unverified.
+A bounded scan returns its results, an `incomplete` flag, and a cursor for the next
+character. The status shows **Search incomplete**, and **Continue search** reads forward
+from that cursor. An empty partial page remains incomplete. A later page restores bounded
+lookbehind per terminal, so split phrases and overlapping matches survive the boundary.
+Completed scans report the final count. Caller cancellation stops the request.
 
-Each result starts with up to 120 characters before the match and 180 after it.
+The service bounds matcher storage to 262,144 source positions. Evicted state is rebuilt
+from recorded lookbehind. Requests allow at most 50 results. There is no result-offset
+limit or rescan of the whole prefix. Large-archive performance remains unverified.
+
+Each result includes a snippet with the complete match, up to 120 preceding characters,
+and up to 180 following characters from its completion event. Selecting a result loads
+its full initial context separately. A context error preserves the snippet and results.
 **Show more before** and **Show more after** add 512 characters on their respective side.
-Each side stops at 8,192 characters with an explicit limit label. Context reads stay
-within the selected run and recording cutoff. They have a five-second timeout and a
-100,000-event limit. Source references retain session, run, sequence, and character offsets.
+Each side stops at 8,192 characters with an explicit limit label. Context reads skip
+empty text and stay within the selected run's output bounds and recording cutoff.
+They have a five-second timeout. Source references retain session, run, sequence, and
+character offsets.
+
+Each read caches terminal metadata and first/last output sequences after one event scan
+per session. Context and lookbehind queries use those bounds. Matching results do not
+trigger repeated session scans or full context reads.
+
+Changing the query or scope, closing the dialog, or selecting another result cancels
+obsolete requests. The client closes their WebSockets. The server cancels their SQLite
+work on disconnect and stops its disconnect reader after a reply.
 
 The result list and context pane render text nodes with a highlighted match. They never
 execute terminal escapes or interpret HTML or Markdown. **Copy context** copies only the
@@ -951,6 +970,11 @@ characters, Unicode folding, split output, overlapping matches, bounded context,
 pagination cutoffs. Reopen checks preserve original recording bytes. A concurrent read
 check leaves capture writable. Invalid requests and canceled reads fail explicitly.
 
+Limit fixtures cover more than 100,000 empty updates, nonempty-event and byte limits,
+continued scans, split matches at cursors, interleaved terminals, overlaps, and cutoff
+preservation. Legacy tool fixtures verify the first-terminal fallback. Disconnect fixtures
+verify cancellation and cleanup after a reply.
+
 Frontend fixtures verify oldest-first page appends, plain-text rendering of markup, and
 explicit scope changes. They also verify rejection of stale search and context replies.
 A real temporary server check searches two synthetic shell terminals while the latest
@@ -962,6 +986,9 @@ It verified archived results, oldest-first pagination, context expansion, case m
 and plain-text rendering of markup. A live synthetic shell remained usable after search.
 The dialog also fit a 390-pixel viewport. The browser reported no errors or warnings.
 The temporary shell and server were stopped after validation.
+
+The later cursor and cancellation changes have fixture coverage. Their browser checks
+could not run because Work settings disabled browser use.
 
 Archive fixtures cover more than 100 saved drafts, search before pagination, and literal
 wildcard characters. They cover restoration after project removal and preservation of

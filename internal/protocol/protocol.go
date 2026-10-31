@@ -37,29 +37,30 @@ type PreparationConfig struct {
 }
 
 type Request struct {
-	Search      *history.SearchFilter   `json:"search,omitempty"`
-	Context     *history.ContextRequest `json:"context,omitempty"`
-	Archived    bool                    `json:"archived,omitempty"`
-	Offset      int                     `json:"offset,omitempty"`
-	Query       string                  `json:"query,omitempty"`
-	Settings    *history.Settings       `json:"settings,omitempty"`
-	Preparation *PreparationConfig      `json:"preparation,omitempty"`
-	Revision    int64                   `json:"revision,omitempty"`
-	Project     string                  `json:"project,omitempty"`
-	Name        string                  `json:"name,omitempty"`
-	Workspace   string                  `json:"workspace,omitempty"`
-	Protocol    string                  `json:"protocol"`
-	Operation   string                  `json:"operation"`
-	Instance    string                  `json:"instance,omitempty"`
-	SQL         string                  `json:"sql,omitempty"`
-	Session     string                  `json:"session,omitempty"`
-	LatestRun   string                  `json:"latestRun,omitempty"` // The latest run that the view saw.
-	Run         string                  `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
-	Tool        string                  `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
-	Limit       int                     `json:"limit,omitempty"`
-	Size        Size                    `json:"size,omitempty"`
-	Draft       *Draft                  `json:"draft,omitempty"`
-	Upload      *Upload                 `json:"upload,omitempty"`
+	Archived    bool               `json:"archived,omitempty"`
+	Offset      int                `json:"offset,omitempty"`
+	Query       string             `json:"query,omitempty"`
+	Settings    *history.Settings  `json:"settings,omitempty"`
+	Preparation *PreparationConfig `json:"preparation,omitempty"`
+	Revision    int64              `json:"revision,omitempty"`
+	Project     string             `json:"project,omitempty"`
+	Name        string             `json:"name,omitempty"`
+	Workspace   string             `json:"workspace,omitempty"`
+	Protocol    string             `json:"protocol"`
+	Operation   string             `json:"operation"`
+	Instance    string             `json:"instance,omitempty"`
+	SQL         string             `json:"sql,omitempty"`
+	Session     string             `json:"session,omitempty"`
+	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
+	Run         string             `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
+	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
+	Limit       int                `json:"limit,omitempty"`
+	Size        Size               `json:"size,omitempty"`
+	Draft       *Draft             `json:"draft,omitempty"`
+	Upload      *Upload            `json:"upload,omitempty"`
+
+	Search  *history.SearchFilter   `json:"search,omitempty"`
+	Context *history.ContextRequest `json:"context,omitempty"`
 }
 
 // Drafts contain editable text and attachments. They are not agent messages. Pending

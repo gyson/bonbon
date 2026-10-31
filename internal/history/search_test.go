@@ -95,7 +95,7 @@ func TestHistorySearchScopesOldestFirstAndStablePagination(t *testing.T) {
 		if !page.More {
 			break
 		}
-		filter.Offset += len(page.Matches)
+		filter.Cursor = page.Cursor
 	}
 	if !reflect.DeepEqual(got, []int64{a.Seq, b.Seq, c.Seq, d.Seq}) {
 		t.Fatal(got)
@@ -200,7 +200,7 @@ func TestHistorySearchOverlapsAndOriginalRecordingsSurviveReopen(t *testing.T) {
 	if err != nil || len(page.Matches) != 1 || !page.More {
 		t.Fatal(page, err)
 	}
-	page, err = s.Search(context.Background(), SearchFilter{Query: "ana", Session: session.ID, Limit: 1, Offset: 1, Through: page.Through})
+	page, err = s.Search(context.Background(), SearchFilter{Query: "ana", Session: session.ID, Limit: 1, Cursor: page.Cursor, Through: page.Through})
 	if err != nil || len(page.Matches) != 1 || page.More || page.Matches[0].Context.Match != "ana" {
 		t.Fatal(page, err)
 	}
@@ -227,7 +227,9 @@ func TestHistorySearchRejectsInvalidRequestsAndCancellation(t *testing.T) {
 	for _, filter := range []SearchFilter{
 		{Query: ""}, {Query: "x"}, {Query: "x", Scope: "unknown"}, {Query: "x", Scope: "project"},
 		{Query: strings.Repeat("x", 257), Scope: "all"}, {Query: "x\x00", Scope: "all"},
-		{Query: "x", Scope: "all", Offset: 1}, {Query: "x", Scope: "all", Limit: 51}, {Query: "x", Scope: "all", Through: -1},
+		{Query: "x", Scope: "all", Cursor: &SearchCursor{Seq: 1}},
+		{Query: "x", Scope: "all", Through: 1, Cursor: &SearchCursor{Seq: 3}},
+		{Query: "x", Scope: "all", Through: 1, Cursor: &SearchCursor{Seq: 1, Offset: -1}}, {Query: "x", Scope: "all", Limit: 51}, {Query: "x", Scope: "all", Through: -1},
 	} {
 		if _, err := s.Search(context.Background(), filter); err == nil {
 			t.Fatalf("accepted %+v", filter)
@@ -245,5 +247,154 @@ func TestHistorySearchRejectsInvalidRequestsAndCancellation(t *testing.T) {
 	searchOutput(t, s, run, "capture continues")
 	if err := <-done; err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
+	}
+}
+
+func searchEventsFixture(t *testing.T, s *Store, run *Run, count int, text string) {
+	t.Helper()
+	_, err := s.db.Exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<?)
+        INSERT INTO events(session_id,run_id,kind,data,text,created)
+        SELECT ?,?,'output',x'1b5b306d',?,? FROM n`, count, run.SessionID, run.ID, text, Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHistorySearchSkipsEmptyUpdatesInSearchAndContext(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	start := searchOutput(t, s, run, "before ca")
+	searchEventsFixture(t, s, run, 100001, "")
+	searchOutput(t, s, run, "fé")
+	searchEventsFixture(t, s, run, 100001, "")
+	page, err := s.Search(context.Background(), SearchFilter{Query: "CAFÉ", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 || page.More || page.Incomplete {
+		t.Fatal(page, err)
+	}
+	if page.Matches[0].Anchor.Seq != start.Seq || page.Matches[0].Context.Match != "café" {
+		t.Fatal(page)
+	}
+	text, err := s.SearchContext(context.Background(), ContextRequest{Anchor: page.Matches[0].Anchor, Before: 8192, After: 8192})
+	if err != nil || text.Before != "before " || text.Match != "café" || text.After != "" || text.MoreAfter || text.MoreBefore {
+		t.Fatal(text, err)
+	}
+}
+
+func TestHistorySearchContinuesAcrossEventLimitWithoutMissingSplitMatch(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	searchOutput(t, s, run, "café first")
+	searchEventsFixture(t, s, run, searchEvents-2, ".")
+	start := searchOutput(t, s, run, "ca")
+	searchOutput(t, s, run, "fé last")
+	filter := SearchFilter{Query: "CAFÉ", Session: session.ID}
+	page, err := s.Search(context.Background(), filter)
+	if err != nil || len(page.Matches) != 1 || !page.More || !page.Incomplete || page.Cursor == nil {
+		t.Fatal(page, err)
+	}
+	filter.Cursor, filter.Through = page.Cursor, page.Through
+	searchOutput(t, s, run, "café after cutoff")
+	page, err = s.Search(context.Background(), filter)
+	if err != nil || len(page.Matches) != 1 || page.More || page.Incomplete || page.Matches[0].Anchor.Seq != start.Seq || page.Matches[0].Context.Match != "café" {
+		t.Fatal(page, err)
+	}
+}
+
+func TestHistorySearchContinuesAcrossByteLimit(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	searchOutput(t, s, run, "needle first")
+	searchEventsFixture(t, s, run, searchBytes/(64<<10), strings.Repeat(".", 64<<10))
+	last := searchOutput(t, s, run, "needle last")
+	filter := SearchFilter{Query: "needle", Session: session.ID}
+	page, err := s.Search(context.Background(), filter)
+	if err != nil || len(page.Matches) != 1 || !page.Incomplete || page.Cursor == nil {
+		t.Fatal(page, err)
+	}
+	filter.Cursor, filter.Through = page.Cursor, page.Through
+	page, err = s.Search(context.Background(), filter)
+	if err != nil || len(page.Matches) != 1 || page.More || page.Matches[0].Anchor.Seq != last.Seq {
+		t.Fatal(page, err)
+	}
+}
+
+func TestHistorySearchCursorRestoresInterleavedRunsAndOverlaps(t *testing.T) {
+	s := testStore(t)
+	own, other := create(t, s), create(t, s)
+	a, b := searchRun(t, s, own.ID), searchRun(t, s, other.ID)
+	searchOutput(t, s, a, "bananaban")
+	searchOutput(t, s, b, "ban")
+	searchOutput(t, s, a, "ana")
+	searchOutput(t, s, b, "ana")
+	filter := SearchFilter{Query: "ana", Scope: "all", Limit: 1}
+	var got []SearchAnchor
+	for i := 0; i < 10; i++ {
+		page, err := s.Search(context.Background(), filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, hit := range page.Matches {
+			got = append(got, hit.Anchor)
+		}
+		if !page.More {
+			break
+		}
+		filter.Cursor, filter.Through = page.Cursor, page.Through
+	}
+	all, err := s.Search(context.Background(), SearchFilter{Query: "ana", Scope: "all"})
+	if err != nil || len(got) != 6 || len(all.Matches) != len(got) {
+		t.Fatal(got, all, err)
+	}
+	for i, hit := range all.Matches {
+		if hit.Anchor != got[i] {
+			t.Fatal(got, all)
+		}
+	}
+}
+
+func TestHistorySearchUsesLegacyToolFallbackOnlyForFirstRun(t *testing.T) {
+	s := testStore(t)
+	project, err := s.CreateProject("Legacy fixture", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.CreatePreparation("Legacy", project.Workspace, project.ID, Preparation{ToolName: "Legacy Agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		run, err := s.NewRun(session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.Append(session.ID, run.ID, "start", []byte(`{}`), ""); err != nil {
+			t.Fatal(err)
+		}
+		searchOutput(t, s, run, "needle")
+	}
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 2 || page.Matches[0].Tool != "Legacy Agent" || page.Matches[1].Tool != "" {
+		t.Fatal(page, err)
+	}
+}
+
+func TestHistorySearchRebuildsEvictedMatchers(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	var first *Run
+	for i := 0; i < 700; i++ {
+		run := searchRun(t, s, session.ID)
+		if first == nil {
+			first = run
+		}
+		searchOutput(t, s, run, strings.Repeat("a", 255))
+	}
+	searchOutput(t, s, first, "b")
+	page, err := s.Search(context.Background(), SearchFilter{Query: strings.Repeat("a", 255) + "b", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 || page.Matches[0].Anchor.Run != first.ID {
+		t.Fatal(page, err)
 	}
 }

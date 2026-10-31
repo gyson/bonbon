@@ -59,11 +59,12 @@ export interface ComposerState { draft: Draft; attachments: Attachment[]; reject
 export interface SentMessage { revision: number; created: string; text: string; attachments: Attachment[]; confirmed: boolean }
 export interface SentPage { messages: SentMessage[]; more: boolean }
 export type HistoryScope = 'session' | 'project' | 'all';
-export interface HistoryFilter { query: string; scope: HistoryScope; session?: string; project?: string; matchCase: boolean; offset?: number; limit?: number; through?: number }
+export interface HistoryFilter { query: string; scope: HistoryScope; session?: string; project?: string; matchCase: boolean; cursor?: HistoryCursor; limit?: number; through?: number }
 export interface HistoryAnchor { session: string; run: string; seq: number; offset: number; length: number; through: number }
 export interface HistoryContext { before: string; match: string; after: string; moreBefore: boolean; moreAfter: boolean; lastSeq: number }
 export interface HistoryHit { anchor: HistoryAnchor; title: string; workspace: string; terminal: number; tool: string; created: string; context: HistoryContext }
-export interface HistoryPage { matches: HistoryHit[]; more: boolean; through: number }
+export interface HistoryCursor { seq: number; offset: number }
+export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete: boolean; through: number; cursor?: HistoryCursor }
 type HistorySearchRequest = { operation: 'history-search'; search: HistoryFilter };
 type HistoryContextRequest = { operation: 'history-context'; context: { anchor: HistoryAnchor; before: number; after: number } };
 type DraftRequest = { operation: 'composer-draft'; session: string; draft?: Draft };
@@ -284,19 +285,28 @@ export function call(server: ServerInfo, request: ListRequest): Promise<SessionI
 export function call(server: ServerInfo, request: StopSessionRequest): Promise<{ stopped: boolean }>;
 export function call(server: ServerInfo, request: DraftRequest): Promise<ComposerState>;
 export function call(server: ServerInfo, request: SentRequest): Promise<SentPage>;
-export function call(server: ServerInfo, request: HistorySearchRequest): Promise<HistoryPage>;
-export function call(server: ServerInfo, request: HistoryContextRequest): Promise<HistoryContext>;
+export function call(server: ServerInfo, request: HistorySearchRequest, signal?: AbortSignal): Promise<HistoryPage>;
+export function call(server: ServerInfo, request: HistoryContextRequest, signal?: AbortSignal): Promise<HistoryContext>;
 export function call(server: ServerInfo, request: UploadRequest): Promise<Attachment>;
-export function call(server: ServerInfo, request: RPCRequest): Promise<unknown> {
+export function call(server: ServerInfo, request: RPCRequest, signal?: AbortSignal): Promise<unknown> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Request canceled.', 'AbortError'));
   return new Promise<unknown>((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener('abort', abort);
     const peer = new Peer(server, request, {
       message(message) {
         if (message.type === 'result') {
+          cleanup();
           resolve(message.result);
           peer.close();
         }
       },
-      error: reject,
+      error(error) { cleanup(); reject(error); },
     });
+    const abort = () => {
+      cleanup();
+      peer.close();
+      reject(new DOMException('Request canceled.', 'AbortError'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }

@@ -175,9 +175,10 @@ and hides that button.
 Search uses literal text and ignores case unless **Match case** is selected. It finds
 phrases across recording chunks within one terminal. Derived output can contain repeated
 text or missing spaces after terminal redraws. It is not an exact conversation transcript.
-Each request scans at most 32 MiB or 100,000 output events, with a five-second timeout.
-Each side of a match can show at most 8,192 context characters. A limit produces an
-explicit message. Large archives may need a narrower scope.
+
+When a scan reaches its limit, **Continue search** keeps the results and scans newer
+output. Context loads separately, so a context error leaves the results available.
+See [SPEC.md](docs/SPEC.md#history-search) for resource limits and large-archive limitations.
 
 Each project can have several drafts. Click a draft entry to reopen it. Starting keeps
 the same session entry and ID. Project names are plain text. Use the small arrow to

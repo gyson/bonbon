@@ -2,6 +2,7 @@ package history
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -253,4 +254,19 @@ func (s *Store) MarkInterrupted() error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// RunTool reads a recorded tool name. The first run uses its preparation when older
+// start events have no tool name.
+func RunTool(start []byte, first bool, preparation *Preparation) string {
+	var event struct {
+		Tool string `json:"tool"`
+	}
+	if len(start) > 0 {
+		json.Unmarshal(start, &event)
+	}
+	if event.Tool == "" && first && preparation != nil {
+		return preparation.ToolName
+	}
+	return event.Tool
 }

@@ -1,6 +1,6 @@
 import { element } from './dom.js';
 import { call, errorMessage } from './protocol.js';
-import type { HistoryContext, HistoryFilter, HistoryHit, HistoryScope, ServerInfo } from './protocol.js';
+import type { HistoryContext, HistoryCursor, HistoryFilter, HistoryHit, HistoryScope, ServerInfo } from './protocol.js';
 
 interface Selection { session?: string; project?: string; title?: string; projectName?: string }
 
@@ -34,6 +34,9 @@ export class HistorySearch {
   private before = 120;
   private after = 180;
   private through = 0;
+  private cursor: HistoryCursor | undefined;
+  private searchRequest: AbortController | undefined;
+  private contextRequest: AbortController | undefined;
   private generation = 0;
   private contextGeneration = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -52,8 +55,8 @@ export class HistorySearch {
     };
     this.scope.onchange = this.matchCase.onchange = () => this.restart();
     this.more.onclick = () => { void this.load(); };
-    this.beforeButton.onclick = () => { void this.loadContext(true); };
-    this.afterButton.onclick = () => { void this.loadContext(false); };
+    this.beforeButton.onclick = () => { void this.loadContext('before'); };
+    this.afterButton.onclick = () => { void this.loadContext('after'); };
     this.previous.onclick = () => this.select(this.selected - 1);
     this.next.onclick = () => this.select(this.selected + 1);
     this.copy.onclick = async () => {
@@ -88,6 +91,8 @@ export class HistorySearch {
     clearTimeout(this.timer);
     this.generation++;
     this.contextGeneration++;
+    this.searchRequest?.abort();
+    this.contextRequest?.abort();
     this.loading = this.loadingContext = false;
   }
 
@@ -97,6 +102,7 @@ export class HistorySearch {
     this.selected = -1;
     this.context = null;
     this.through = 0;
+    this.cursor = undefined;
     this.list.replaceChildren();
     this.more.hidden = true;
     this.pane.hidden = true;
@@ -127,19 +133,22 @@ export class HistorySearch {
     const server = this.server();
     if (!server || !this.filter || this.loading || !this.dialog.open) return;
     const generation = this.generation;
-    const filter = { ...this.filter, offset: this.hits.length, ...(this.through ? { through: this.through } : {}) };
+    const filter = { ...this.filter, ...(this.cursor ? { cursor: this.cursor } : {}), ...(this.through ? { through: this.through } : {}) };
+    const controller = this.searchRequest = new AbortController();
     this.loading = true;
     this.controls();
     this.message(this.hits.length ? 'Loading more results…' : 'Searching recorded output…');
     try {
-      const page = await this.send(server, { operation: 'history-search', search: filter });
+      const page = await this.send(server, { operation: 'history-search', search: filter }, controller.signal);
       if (generation !== this.generation) return;
       this.through = page.through;
+      this.cursor = page.cursor;
       const first = this.hits.length;
       this.hits.push(...page.matches);
       page.matches.forEach((hit, i) => this.list.append(this.item(hit, first + i)));
       this.more.hidden = !page.more;
-      this.message(this.hits.length ? `${this.hits.length} ${this.hits.length === 1 ? 'result' : 'results'}${page.more ? ' loaded' : ''} · Oldest first`
+      this.more.textContent = page.incomplete ? 'Continue search' : 'Show more results';
+      this.message(page.incomplete ? `${this.hits.length} results loaded · Search incomplete · Oldest first. Continue search to reach newer output.` : this.hits.length ? `${this.hits.length} ${this.hits.length === 1 ? 'result' : 'results'}${page.more ? ' loaded' : ''} · Oldest first`
         : 'No matching output. Try another search term or a broader scope.');
       if (this.selected < 0 && this.hits.length) this.select(0);
     } catch (error) {
@@ -177,6 +186,7 @@ export class HistorySearch {
     const hit = this.hits[index];
     if (!hit) return;
     this.contextGeneration++;
+    this.contextRequest?.abort();
     this.loadingContext = false;
     this.selected = index;
     this.before = 120;
@@ -191,6 +201,7 @@ export class HistorySearch {
     this.list.querySelectorAll('button').forEach((button, i) => button.setAttribute('aria-current', String(i === index)));
     this.renderContext();
     this.pane.scrollTop = 0;
+    void this.loadContext('initial');
   }
 
   private renderContext(): void {
@@ -203,24 +214,25 @@ export class HistorySearch {
     this.controls();
   }
 
-  private async loadContext(keepPosition: boolean): Promise<void> {
+  private async loadContext(side: 'before' | 'after' | 'initial'): Promise<void> {
     const hit = this.hits[this.selected], server = this.server();
     if (!hit || !server || this.loadingContext) return;
     const generation = ++this.contextGeneration;
-    const before = keepPosition ? Math.min(8192, this.before + 512) : this.before;
-    const after = keepPosition ? this.after : Math.min(8192, this.after + 512);
+    const before = side === 'before' ? Math.min(8192, this.before + 512) : this.before;
+    const after = side === 'after' ? Math.min(8192, this.after + 512) : this.after;
     const oldHeight = this.output.scrollHeight, oldTop = this.pane.scrollTop;
+    const controller = this.contextRequest = new AbortController();
     this.loadingContext = true;
     this.contextStatus.textContent = 'Loading context…';
     this.controls();
     try {
-      const text = await this.send(server, { operation: 'history-context', context: { anchor: hit.anchor, before, after } });
+      const text = await this.send(server, { operation: 'history-context', context: { anchor: hit.anchor, before, after } }, controller.signal);
       if (generation !== this.contextGeneration) return;
       this.context = text;
       this.before = before;
       this.after = after;
       this.renderContext();
-      if (keepPosition) this.pane.scrollTop = oldTop + this.output.scrollHeight - oldHeight;
+      if (side === 'before') this.pane.scrollTop = oldTop + this.output.scrollHeight - oldHeight;
       this.contextStatus.textContent = '';
     } catch (error) {
       if (generation === this.contextGeneration) this.contextStatus.textContent = `Cannot read context: ${errorMessage(error)}`;

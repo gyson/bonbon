@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Peer, VERSION, encodeBytes, decodeBytes } from './dist/protocol.js';
+import { call, Peer, VERSION, encodeBytes, decodeBytes } from './dist/protocol.js';
 import { composeInput } from './dist/composer.js';
 
 class Socket {
@@ -144,4 +144,25 @@ test('read-only history acknowledges rendered frames without allowing input', ()
   peer.acknowledgeFrame(1);
   assert.equal(peer.socket.sent.length, 2);
   peer.close();
+});
+
+test('canceling a history RPC closes its socket and rejects the pending request', async () => {
+  const sockets = [];
+  const originalSocket = globalThis.WebSocket, originalLocation = globalThis.location;
+  globalThis.WebSocket = class extends Socket { constructor() { super(); sockets.push(this); } };
+  globalThis.location = { host: 'localhost:1234' };
+  try {
+    const controller = new AbortController();
+    const result = call(server, { operation: 'history-search', search: { query: 'needle', scope: 'all', matchCase: false } }, controller.signal);
+    sockets[0].receive({ type: 'server', server });
+    const rejected = assert.rejects(result, { name: 'AbortError' });
+    controller.abort();
+    await rejected;
+    assert.equal(sockets[0].readyState, 3);
+    await assert.rejects(call(server, { operation: 'history-context', context: {} }, controller.signal), { name: 'AbortError' });
+    assert.equal(sockets.length, 1);
+  } finally {
+    globalThis.WebSocket = originalSocket;
+    globalThis.location = originalLocation;
+  }
 });

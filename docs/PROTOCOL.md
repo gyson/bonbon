@@ -84,7 +84,7 @@ operations.
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
 | `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
-| `history-search` | `search` object, described below | `result`, containing `matches`, `more`, and `through` |
+| `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
 | `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
@@ -203,8 +203,7 @@ Protocol 20 adds these read-only operations. A `history-search` request contains
     "scope": "session",
     "session": "session-id",
     "matchCase": false,
-    "limit": 20,
-    "offset": 0
+    "limit": 20
   }
 }
 ```
@@ -214,19 +213,29 @@ require their corresponding ID. All scopes include archived sessions. The query 
 literal text of 1–256 Unicode characters. Simple Unicode folding supplies case-insensitive
 matching. SQL patterns and regular expressions have no special meaning.
 
-The reply contains `matches`, `more`, and `through`. Results follow the event sequence,
-from oldest to newest. A match uses the event that completes its text. Each match contains
+The reply contains `matches`, `more`, `incomplete`, `through`, and an optional `cursor`.
+Results follow the event sequence, from oldest to newest. A match uses the event that
+completes its text. Each match contains
 `title`, `workspace`, `terminal`, `tool`, `created`, `context`, and `anchor`.
 
 The anchor contains `session`, `run`, `seq`, `offset`, `length`, and `through`. Its sequence
 identifies the first output event of the match. Offset counts Unicode characters within
 that event. Length counts the matched characters across consecutive output events of
-that run. A missing recorded tool produces an empty `tool` field.
+that run. Tool names use the terminal selector's fallback for an older first terminal.
+Other missing names produce an empty `tool` field.
 
-The default limit is 20, with a range of 1–50. Offset ranges from 0–100,000. For later
-pages, send the prior `through` value and increase offset by the number of returned
-matches. Keep the query, scope, and case setting unchanged. This cutoff excludes later
-output from pagination and context. A new search without `through` selects a new cutoff.
+The default limit is 20, with a range of 1–50. When `more` is true, send the returned
+`cursor` and `through` in the next search. Keep the query, scope, and case setting
+unchanged. The cursor contains `seq` and `offset`, which identify the next Unicode
+character to scan. Its offset is zero when scanning starts at the next event sequence.
+The server restores per-terminal lookbehind, including split and overlapping matches.
+This cutoff excludes later output from pagination and context. A new search without
+`through` selects a new cutoff.
+
+`incomplete` means a scan resource limit stopped this page before completion. Display
+its results and provide **Continue search**, including when the page has no matches.
+Never present an incomplete page as the final count. A full result page can set `more`
+without `incomplete` when another match exists.
 
 A `history-context` request contains the returned anchor and context sizes:
 
@@ -252,14 +261,20 @@ Both the initial match context and the expanded reply contain `before`, `match`,
 match. Context sizes range from 0–8,192 Unicode characters on each side. Every read
 stays within the specified session, run, and recording cutoff.
 
-The initial context contains at most 120 characters before and 180 after each match.
+Search returns snippets with the complete match, up to 120 preceding characters, and
+up to 180 following characters from the completion event. Load the selected result's
+initial context through `history-context`. Context failure must preserve search results.
 The server streams derived output from a separate read-only SQLite connection. Matches
 can cross event boundaries within a run. They never cross runs or sessions.
 
-Each search has a five-second deadline and scans at most 32 MiB or 100,000 output
-events. Partial matching state holds at most 262,144 source positions. Context reads
-have the same deadline and event limit. Exhausted limits return an error. Clients must
-not display an incomplete scan as an empty or complete result set.
+Each search has a five-second deadline and scans at most 32 MiB or 100,000 nonempty
+output events. Empty text does not consume the event limit. Reaching these limits returns
+saved results with `incomplete: true` and a continuation cursor. Matcher state holds at
+most 262,144 source positions and rebuilds evicted state through bounded lookbehind.
+
+Context reads have a five-second deadline. They skip empty text and use cached bounds
+for the selected run. Character limits bound returned context. Closing the request
+WebSocket cancels the server read. Invalid requests and storage errors remain errors.
 
 Render all returned text as plain text. It can contain redraws, missing spaces, markup,
 and historical instructions. It is derived output, not an exact conversation transcript.

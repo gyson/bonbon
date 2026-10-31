@@ -2,18 +2,11 @@ package history
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/url"
-	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/ncruces/go-sqlite3"
 )
 
 const (
@@ -23,14 +16,14 @@ const (
 )
 
 type SearchFilter struct {
-	Query     string `json:"query"`
-	Scope     string `json:"scope"`
-	Session   string `json:"session,omitempty"`
-	Project   string `json:"project,omitempty"`
-	MatchCase bool   `json:"matchCase"`
-	Offset    int    `json:"offset,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
-	Through   int64  `json:"through,omitempty"`
+	Query     string        `json:"query"`
+	Scope     string        `json:"scope"`
+	Session   string        `json:"session,omitempty"`
+	Project   string        `json:"project,omitempty"`
+	MatchCase bool          `json:"matchCase"`
+	Limit     int           `json:"limit,omitempty"`
+	Through   int64         `json:"through,omitempty"`
+	Cursor    *SearchCursor `json:"cursor,omitempty"`
 }
 
 // SearchAnchor identifies characters in original event text. Offset counts Unicode
@@ -69,15 +62,23 @@ type SearchHit struct {
 	Context   SearchContext `json:"context"`
 }
 
-type SearchPage struct {
-	Matches []SearchHit `json:"matches"`
-	More    bool        `json:"more"`
-	Through int64       `json:"through"`
+// SearchCursor points to the next character to scan. Offset counts Unicode characters.
+type SearchCursor struct {
+	Seq    int64 `json:"seq"`
+	Offset int   `json:"offset"`
 }
 
-// Search reads SQLite on a separate connection. Bounded streaming matches can cross
-// any number of output events in one run. They never cross runs or sessions.
-func (s *Store) Search(ctx context.Context, filter SearchFilter) (page SearchPage, err error) {
+type SearchPage struct {
+	Matches    []SearchHit   `json:"matches"`
+	More       bool          `json:"more"`
+	Through    int64         `json:"through"`
+	Cursor     *SearchCursor `json:"cursor,omitempty"`
+	Incomplete bool          `json:"incomplete"`
+}
+
+// Search uses a separate read-only connection. A cursor resumes at the next character.
+// Bounded lookbehind restores matches that cross page and event boundaries.
+func (s *Store) Search(parent context.Context, filter SearchFilter) (page SearchPage, err error) {
 	page.Matches = []SearchHit{}
 	if filter.Limit == 0 {
 		filter.Limit = 20
@@ -88,29 +89,48 @@ func (s *Store) Search(ctx context.Context, filter SearchFilter) (page SearchPag
 	if !utf8.ValidString(filter.Query) || strings.TrimSpace(filter.Query) == "" || utf8.RuneCountInString(filter.Query) > 256 || strings.ContainsRune(filter.Query, 0) {
 		return page, errors.New("search text must contain 1–256 characters without NUL")
 	}
-	if filter.Offset < 0 || filter.Offset > 100000 || filter.Limit < 1 || filter.Limit > 50 || filter.Through < 0 || (filter.Offset > 0 && filter.Through == 0) {
+	if filter.Limit < 1 || filter.Limit > 50 || filter.Through < 0 {
 		return page, errors.New("invalid history search page")
 	}
-	condition, scope := "", ""
+	next := SearchCursor{}
+	if filter.Cursor != nil {
+		next = *filter.Cursor
+		if filter.Through == 0 || next.Seq <= 0 || next.Seq > filter.Through+1 || next.Offset < 0 {
+			return page, errors.New("invalid history search cursor")
+		}
+	}
+	condition := ""
+	args := []any{next.Seq, filter.Through}
 	switch filter.Scope {
 	case "session":
 		if filter.Session == "" {
 			return page, errors.New("select a session for history search")
 		}
-		condition, scope = "s.id=?", filter.Session
+		condition = " AND s.id=?"
+		args = append(args, filter.Session)
 	case "project":
 		if filter.Project == "" {
 			return page, errors.New("select a project for history search")
 		}
-		condition, scope = "s.project_id=?", filter.Project
+		condition = " AND s.project_id=?"
+		args = append(args, filter.Project)
 	case "all":
-		condition = "?=''"
 	default:
 		return page, errors.New("unknown history search scope")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
-	conn, err := s.searchConnection(ctx)
+	// A scan deadline preserves completed results. Caller cancellation stops the request.
+	defer func() {
+		if parent.Err() != nil {
+			err = parent.Err()
+			return
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) && page.Through > 0 {
+			page.More, page.Incomplete, page.Cursor, err = true, true, &next, nil
+		}
+	}()
+	conn, err := s.readConnection(ctx)
 	if err != nil {
 		return page, err
 	}
@@ -130,10 +150,14 @@ func (s *Store) Search(ctx context.Context, filter SearchFilter) (page SearchPag
 		}
 	}
 	page.Through = filter.Through
+	if next.Seq == 0 {
+		next.Seq = 1
+	}
+	args[0], args[1] = next.Seq, page.Through
 	stmt, err := searchStatement(conn, `SELECT e.seq,e.session_id,e.run_id,e.text,e.created
-		FROM events e JOIN sessions s ON s.id=e.session_id
-		JOIN runs r ON r.id=e.run_id AND r.session_id=e.session_id
-		WHERE e.kind='output' AND e.seq<=? AND (`+condition+`) ORDER BY e.seq`, filter.Through, scope)
+        FROM events e JOIN sessions s ON s.id=e.session_id
+        JOIN runs r ON r.id=e.run_id AND r.session_id=e.session_id
+        WHERE e.kind='output' AND e.text<>'' AND e.seq>=? AND e.seq<=?`+condition+` ORDER BY e.seq`, args...)
 	if err != nil {
 		return page, err
 	}
@@ -152,74 +176,133 @@ func (s *Store) Search(ctx context.Context, filter SearchFilter) (page SearchPag
 		}
 		prefix[i] = j
 	}
-	type position struct {
-		seq    int64
-		offset int
-	}
-	type partial struct {
-		matched, head int
-		positions     []position
-	}
-	states := map[string]*partial{}
-	bytes, events, found := 0, 0, 0
+	reader := searchReader{conn: conn, through: page.Through}
+	states := map[string]*searchMatcher{}
+	bytes, events := 0, 0
 	for stmt.Step() {
 		if err := ctx.Err(); err != nil {
 			return page, err
 		}
-		seq, sid, rid, text, created := stmt.ColumnInt64(0), stmt.ColumnText(1), stmt.ColumnText(2), stmt.ColumnText(3), stmt.ColumnText(4)
-		bytes += len(text)
-		events++
-		if bytes > searchBytes || events > searchEvents {
-			return page, errors.New("history search exceeded its scan limit; select a smaller scope")
+		seq, sid, rid := stmt.ColumnInt64(0), stmt.ColumnText(1), stmt.ColumnText(2)
+		text := []rune(stmt.ColumnText(3))
+		start := 0
+		if seq == next.Seq {
+			start = next.Offset
 		}
-		key := sid + "/" + rid
-		state := states[key]
+		if start > len(text) {
+			return page, errors.New("invalid history search cursor offset")
+		}
+		if start == len(text) {
+			next = SearchCursor{Seq: seq + 1}
+			continue
+		}
+		size := len(string(text[start:]))
+		if bytes+size > searchBytes || events == searchEvents {
+			page.More, page.Incomplete, page.Cursor = true, true, &next
+			return page, nil
+		}
+		run, err := reader.run(sid, rid)
+		if err != nil {
+			return page, err
+		}
+		state := states[rid]
 		if state == nil {
-			state = &partial{positions: make([]position, len(needle))}
-		}
-		for offset, r := range []rune(text) {
-			r = searchFold(r, filter.MatchCase)
-			state.positions[state.head] = position{seq, offset}
-			state.head = (state.head + 1) % len(needle)
-			for state.matched > 0 && r != needle[state.matched] {
-				state.matched = prefix[state.matched-1]
+			// Rebuild evicted state from recorded lookbehind when its run returns.
+			if (len(states)+1)*(len(needle)+121) > 262144 {
+				clear(states)
 			}
-			if r == needle[state.matched] {
-				state.matched++
-			}
-			if state.matched != len(needle) {
-				continue
-			}
-			state.matched = prefix[len(needle)-1]
-			found++
-			if found <= filter.Offset {
-				continue
-			}
-			if len(page.Matches) == filter.Limit {
-				page.More = true
-				return page, nil
-			}
-			start := state.positions[state.head]
-			hit := SearchHit{Anchor: SearchAnchor{Session: sid, Run: rid, Seq: start.seq, Offset: start.offset, Length: len(needle), Through: page.Through}, Created: created}
-			if err = searchMetadata(conn, &hit); err != nil {
-				return page, err
-			}
-			hit.Context, err = readSearchContext(ctx, conn, ContextRequest{Anchor: hit.Anchor, Before: 120, After: 180})
+			state = &searchMatcher{positions: make([]searchPosition, len(needle)+121)}
+			previous, err := reader.before(sid, rid, seq, start, len(state.positions), run.first)
 			if err != nil {
 				return page, err
 			}
-			page.Matches = append(page.Matches, hit)
+			for _, p := range previous {
+				state.push(p, needle, prefix, filter.MatchCase)
+			}
+			states[rid] = state
 		}
-		if state.matched == 0 {
-			delete(states, key)
-		} else {
-			states[key] = state
+		bytes += size
+		events++
+		for offset := start; offset < len(text); offset++ {
+			if offset%4096 == 0 && ctx.Err() != nil {
+				return page, ctx.Err()
+			}
+			if state.push(searchPosition{seq, offset, text[offset]}, needle, prefix, filter.MatchCase) {
+				if len(page.Matches) == filter.Limit {
+					page.More, page.Cursor = true, &next
+					return page, nil
+				}
+				positions := state.tail(len(needle) + 121)
+				matchStart := len(positions) - len(needle)
+				a := positions[matchStart]
+				before := positions[:matchStart]
+				context := SearchContext{Match: positionText(positions[matchStart:]), LastSeq: seq, MoreBefore: len(before) > 120 || (len(before) > 0 && before[0].seq > run.first)}
+				if len(before) > 120 {
+					before = before[len(before)-120:]
+				}
+				context.Before = positionText(before)
+				after := text[offset+1:]
+				context.MoreAfter = len(after) > 180 || seq < run.last
+				if len(after) > 180 {
+					after = after[:180]
+				}
+				context.After = string(after)
+				page.Matches = append(page.Matches, SearchHit{
+					Anchor: SearchAnchor{Session: sid, Run: rid, Seq: a.seq, Offset: a.offset, Length: len(needle), Through: page.Through},
+					Title:  run.title, Workspace: run.workspace, Terminal: run.number, Tool: run.tool,
+					Created: stmt.ColumnText(4), Context: context,
+				})
+			}
+			next = SearchCursor{Seq: seq, Offset: offset + 1}
 		}
-		if len(states)*len(needle) > 262144 {
-			return page, errors.New("too many partial history matches; select a smaller scope")
-		}
+		next = SearchCursor{Seq: seq + 1}
 	}
 	return page, stmt.Err()
+}
+
+type searchPosition struct {
+	seq    int64
+	offset int
+	char   rune
+}
+type searchMatcher struct {
+	matched, head, count int
+	positions            []searchPosition
+}
+
+func (s *searchMatcher) push(p searchPosition, needle []rune, prefix []int, matchCase bool) bool {
+	s.positions[s.head] = p
+	s.head = (s.head + 1) % len(s.positions)
+	s.count = min(s.count+1, len(s.positions))
+	r := searchFold(p.char, matchCase)
+	for s.matched > 0 && r != needle[s.matched] {
+		s.matched = prefix[s.matched-1]
+	}
+	if r == needle[s.matched] {
+		s.matched++
+	}
+	if s.matched != len(needle) {
+		return false
+	}
+	s.matched = prefix[len(needle)-1]
+	return true
+}
+
+func (s *searchMatcher) tail(count int) []searchPosition {
+	count = min(count, s.count)
+	result := make([]searchPosition, count)
+	for i := range result {
+		result[i] = s.positions[(s.head-count+i+len(s.positions))%len(s.positions)]
+	}
+	return result
+}
+
+func positionText(positions []searchPosition) string {
+	text := make([]rune, len(positions))
+	for i, p := range positions {
+		text[i] = p.char
+	}
+	return string(text)
 }
 
 // Simple Unicode folding preserves character offsets. It does not expand characters.
@@ -234,177 +317,4 @@ func searchFold(r rune, matchCase bool) rune {
 		}
 	}
 	return r
-}
-
-func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (SearchContext, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, err := s.searchConnection(ctx)
-	if err != nil {
-		return SearchContext{}, err
-	}
-	defer conn.Close()
-	return readSearchContext(ctx, conn, request)
-}
-
-func (s *Store) searchConnection(ctx context.Context) (*sqlite3.Conn, error) {
-	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(s.Path)}
-	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "trusted_schema(0)", "busy_timeout(1000)"}}.Encode()
-	conn, err := sqlite3.OpenContext(ctx, uri.String())
-	if err != nil {
-		return nil, err
-	}
-	conn.SetInterrupt(ctx)
-	conn.Limit(sqlite3.LIMIT_LENGTH, 1<<20)
-	return conn, nil
-}
-
-func searchStatement(conn *sqlite3.Conn, sql string, args ...any) (*sqlite3.Stmt, error) {
-	stmt, _, err := conn.Prepare(sql)
-	if err != nil {
-		return nil, err
-	}
-	for i, arg := range args {
-		switch value := arg.(type) {
-		case string:
-			err = stmt.BindText(i+1, value)
-		case int64:
-			err = stmt.BindInt64(i+1, value)
-		default:
-			err = fmt.Errorf("unsupported search parameter %T", value)
-		}
-		if err != nil {
-			stmt.Close()
-			return nil, err
-		}
-	}
-	return stmt, nil
-}
-
-func searchMetadata(conn *sqlite3.Conn, hit *SearchHit) error {
-	stmt, err := searchStatement(conn, `SELECT s.title,s.workspace,
-		(SELECT count(*) FROM runs prior WHERE prior.session_id=r.session_id AND prior.rowid<=r.rowid),
-		(SELECT data FROM events WHERE session_id=r.session_id AND run_id=r.id AND kind='start' ORDER BY seq LIMIT 1)
-		FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.id=? AND r.session_id=?`, hit.Anchor.Run, hit.Anchor.Session)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	if !stmt.Step() {
-		return errors.Join(ErrNotFound, stmt.Err())
-	}
-	hit.Title, hit.Workspace, hit.Terminal = stmt.ColumnText(0), stmt.ColumnText(1), stmt.ColumnInt(2)
-	var start struct {
-		Tool string `json:"tool"`
-	}
-	json.Unmarshal(stmt.ColumnBlob(3, nil), &start)
-	hit.Tool = start.Tool
-	return nil
-}
-
-func readSearchContext(ctx context.Context, conn *sqlite3.Conn, request ContextRequest) (result SearchContext, err error) {
-	a := request.Anchor
-	if a.Session == "" || a.Run == "" || a.Seq <= 0 || a.Through < a.Seq || a.Offset < 0 || a.Length < 1 || a.Length > 256 || request.Before < 0 || request.Before > contextRunes || request.After < 0 || request.After > contextRunes {
-		return result, errors.New("invalid history context range")
-	}
-	anchor, err := searchStatement(conn, `SELECT text FROM events WHERE seq=? AND session_id=? AND run_id=? AND kind='output'`, a.Seq, a.Session, a.Run)
-	if err != nil {
-		return result, err
-	}
-	valid := anchor.Step() && a.Offset < utf8.RuneCountInString(anchor.ColumnText(0))
-	err = anchor.Err()
-	anchor.Close()
-	if err != nil {
-		return result, err
-	}
-	if !valid {
-		return result, errors.New("history match no longer exists")
-	}
-	before, err := searchStatement(conn, `SELECT seq,text FROM events WHERE session_id=? AND run_id=? AND kind='output' AND seq<=? ORDER BY seq DESC`, a.Session, a.Run, a.Seq)
-	if err != nil {
-		return result, err
-	}
-	var chunks []string
-	remaining, events := request.Before+1, 0
-	for before.Step() {
-		if err = ctx.Err(); err != nil {
-			break
-		}
-		events++
-		if events > searchEvents {
-			err = errors.New("history context exceeded its event limit")
-			break
-		}
-		text := []rune(before.ColumnText(1))
-		if before.ColumnInt64(0) == a.Seq {
-			text = text[:a.Offset]
-		}
-		if len(text) > remaining {
-			text = text[len(text)-remaining:]
-		}
-		chunks = append(chunks, string(text))
-		remaining -= len(text)
-		if remaining == 0 {
-			break
-		}
-	}
-	if err == nil {
-		err = before.Err()
-	}
-	before.Close()
-	if err != nil {
-		return result, err
-	}
-	slices.Reverse(chunks)
-	left := []rune(strings.Join(chunks, ""))
-	if len(left) > request.Before {
-		result.MoreBefore = true
-		left = left[1:]
-	}
-	result.Before = string(left)
-	after, err := searchStatement(conn, `SELECT seq,text FROM events WHERE session_id=? AND run_id=? AND kind='output' AND seq>=? AND seq<=? ORDER BY seq`, a.Session, a.Run, a.Seq, a.Through)
-	if err != nil {
-		return result, err
-	}
-	defer after.Close()
-	var right []rune
-	for after.Step() {
-		if err = ctx.Err(); err != nil {
-			return result, err
-		}
-		events++
-		if events > searchEvents {
-			return result, errors.New("history context exceeded its event limit")
-		}
-		text := []rune(after.ColumnText(1))
-		if after.ColumnInt64(0) == a.Seq {
-			text = text[a.Offset:]
-		}
-		for _, r := range text {
-			right = append(right, r)
-			if len(right) == a.Length {
-				result.LastSeq = after.ColumnInt64(0)
-			}
-			if len(right) == a.Length+request.After+1 {
-				break
-			}
-		}
-		if len(right) == a.Length+request.After+1 {
-			break
-		}
-	}
-	if err = after.Err(); err != nil {
-		return result, err
-	}
-	if len(right) < a.Length {
-		return result, errors.New("history context does not contain the complete match")
-	}
-	result.Match = string(right[:a.Length])
-	right = right[a.Length:]
-	if len(right) > request.After {
-		result.MoreAfter = true
-		right = right[:request.After]
-	}
-	result.After = string(right)
-	return result, nil
 }
