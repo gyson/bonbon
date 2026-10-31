@@ -49,8 +49,10 @@ export class SessionConnection {
         message: message => {
           if (this.closed || this.peer !== peer) return;
           if (message.type === 'session') {
-            // After the ID is known, retries can only rejoin that session.
-            this.request = { operation: 'session-resume', session: message.session, size: this.host.size() };
+            // After the ID is known, retries can only rejoin that session. A view of an
+            // earlier terminal keeps showing that terminal.
+            const run = this.request.operation === 'session-resume' ? this.request.run : undefined;
+            this.request = { operation: 'session-resume', session: message.session, size: this.host.size(), ...(run ? { run } : {}) };
             resolve();
           }
           stream.push(message);

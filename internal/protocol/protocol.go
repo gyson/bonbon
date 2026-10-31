@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/18"
+const Version = "bonbon/19"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -52,6 +52,7 @@ type Request struct {
 	SQL         string             `json:"sql,omitempty"`
 	Session     string             `json:"session,omitempty"`
 	LatestRun   string             `json:"latestRun,omitempty"` // The latest run that the view saw.
+	Run         string             `json:"run,omitempty"`       // An earlier run to show. Empty shows the latest run.
 	Tool        string             `json:"tool,omitempty"`      // A tool ID from Settings. Empty selects Shell.
 	Limit       int                `json:"limit,omitempty"`
 	Size        Size               `json:"size,omitempty"`
@@ -117,6 +118,18 @@ type Handoff struct {
 	Folder    string `json:"folder"`
 	Prompt    string `json:"prompt"`
 	Available bool   `json:"available"`
+}
+
+// Terminal is one terminal of a session. Each terminal is one run. Number counts from 1
+// in start order. A new terminal has no run ID until its process starts. Tool is empty
+// when the start event of an older run has no tool.
+type Terminal struct {
+	Number  int    `json:"number"`
+	Run     string `json:"run"`
+	Tool    string `json:"tool"`
+	Status  string `json:"status"`
+	Started string `json:"started"`
+	Ended   string `json:"ended"`
 }
 
 type SessionInfo struct {

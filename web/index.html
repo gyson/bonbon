@@ -53,9 +53,15 @@
         </form>
       </section>
       <div id="terminal-pane">
-        <div class="view-heading"><span>TERMINAL</span><span id="session-id"></span></div>
+        <div class="view-heading">
+          <span class="terminal-heading"><span>TERMINAL</span>
+            <span id="terminal-picker" hidden><button id="terminal-previous" aria-label="Earlier terminal" title="Earlier terminal">‹</button><button id="terminal-menu" aria-haspopup="true" aria-expanded="false" aria-controls="terminal-list"><span id="terminal-label">Terminal</span><span aria-hidden="true">▾</span></button><button id="terminal-next" aria-label="Later terminal" title="Later terminal">›</button></span>
+          </span>
+          <span id="session-id"></span>
+          <div id="terminal-list" role="group" aria-label="Terminals of this session" hidden></div>
+        </div>
         <div id="terminal" aria-label="Session terminal"></div>
-        <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><span id="dimensions"></span></div>
+        <div class="terminal-footer"><span id="terminal-hint">Click the terminal to type. Ctrl+C reaches the application.</span><button id="terminal-latest" hidden>Back to live terminal</button><span id="dimensions"></span></div>
       </div>
       <div id="session-divider" role="separator" tabindex="0" aria-label="Terminal size" aria-orientation="horizontal" aria-controls="terminal-pane" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65" title="Drag to resize. Use Up and Down arrow keys when focused." hidden><span aria-hidden="true"></span></div>
       <section id="composer" aria-label="Message editor">

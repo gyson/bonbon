@@ -1,5 +1,5 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
-import type { Handoff, Project, Preparation, Run, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
+import type { Handoff, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
 import { Terminal } from '@xterm/xterm';
@@ -14,6 +14,7 @@ import { sessionGroups } from './projects.js';
 import { SessionConnection } from './session-connection.js';
 import { PreparationEditor } from './preparation.js';
 import { SettingsView } from './settings.js';
+import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 
 const elements = {
@@ -114,6 +115,7 @@ let continueTools: Tool[] = [];
 // The handoff prompt of the selected session. It stays available after a new terminal
 // starts, so the user can copy or send it later.
 let handoff: { session: string; info: Handoff } | null = null;
+let terminalsGeneration = 0;
 let busy = false, refreshing = false;
 let archivedList = false, pageOffset = 0, hasNextPage = false, refreshGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,6 +128,12 @@ const composer = new Composer({
 });
 const sessionSplit = new SessionSplit();
 const handoffPrompt = new HandoffPrompt({ insert: text => composer.insert(text) });
+// A view shows one terminal of the selected session. Earlier terminals show their saved
+// final screen. The live process continues while a view shows an earlier terminal.
+const terminalPicker = new TerminalPicker({
+  select: run => action(async () => { if (selected?.id) await openSession(selected, undefined, run); }),
+  refresh: () => { if (selected?.id) void loadTerminals(selected.id); },
+});
 new Sidebar();
 
 let showingSettings = false;
@@ -181,13 +189,15 @@ function controls() {
   composer.controls(busy, !!connection?.ready && !!connection.peer?.active);
   $('add-project').disabled = busy || !server;
   $('stop').disabled = busy || showingSettings || !selected || !['running', 'starting'].includes(selected.status);
-  $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active;
+  // A view of an earlier terminal uses Back to live terminal instead.
+  $('reconnect').hidden = showingSettings || !selected || selected.status === 'draft' || !!connection?.peer?.active || !!terminalPicker.shownRun;
   $('reconnect').textContent = ['running', 'starting'].includes(selected?.status ?? '') ? 'Reconnect' : 'Reload output';
   $('reconnect').disabled = busy;
   $('continue-session').hidden = showingSettings || !canContinue(selected, !!connection?.peer?.active);
   $('continue-session').disabled = $('continue-submit').disabled = busy;
   $('handoff-open').hidden = showingSettings || !selected?.id || handoff?.session !== selected.id || !handoff.info.available;
   $('handoff-open').disabled = busy;
+  terminalPicker.controls(busy);
   $('project-submit').disabled = $('project-remove').disabled = $('rename-submit').disabled = busy;
   $('rename-session').hidden = showingSettings || !selected?.id || selected.status === 'draft';
   $('remove-worktree').hidden = showingSettings || !selected?.worktree || selected.worktree.state === 'removed';
@@ -409,10 +419,12 @@ async function leaveView() {
   if (terminal) terminal.options.disableStdin = true;
 }
 
-async function openSession(session: SessionView, launch?: Launch): Promise<void> {
+// run shows an earlier terminal of the session. Without run, the view shows the latest
+// terminal.
+async function openSession(session: SessionView, launch?: Launch, run = ''): Promise<void> {
   if (!server) throw new Error('The server is unavailable. Reload this page.');
   const start = !!launch;
-  if (!start && !showingSettings && selected?.id === session.id && connection?.peer?.active) {
+  if (!start && !run && !showingSettings && selected?.id === session.id && connection?.peer?.active) {
     terminal?.focus();
     return;
   }
@@ -424,7 +436,9 @@ async function openSession(session: SessionView, launch?: Launch): Promise<void>
   }
   await composer.select('');
   notice();
+  if (selected?.id !== session.id) terminalPicker.update([]);
   selected = session;
+  terminalPicker.show(start ? '' : run);
   if (archivedList !== !!session.archived) {
     archivedList = !!session.archived; pageOffset = 0; $('filter').value = '';
     await refreshSessions();
@@ -456,7 +470,7 @@ async function openSession(session: SessionView, launch?: Launch): Promise<void>
   } else if (launch?.kind === 'continue' && session.id && session.run) {
     request = { operation: 'session-continue', session: session.id, latestRun: session.run.id, tool: launch.tool, size: size(view) };
   } else if (session.id) {
-    request = { operation: 'session-resume', session: session.id, size: size(view) };
+    request = { operation: 'session-resume', session: session.id, size: size(view), ...(run ? { run } : {}) };
   } else {
     throw new Error('No session was selected.');
   }
@@ -475,11 +489,13 @@ async function openSession(session: SessionView, launch?: Launch): Promise<void>
       switch (message.type) {
         case 'session':
           selected.id = message.session;
-          selected.status = message.active ? 'running' : (message.status ?? 'ended');
+          // The status of an earlier terminal is not the status of the session.
+          if (!terminalPicker.shownRun) selected.status = message.active ? 'running' : (message.status ?? 'ended');
           $('session-id').textContent = message.session;
           $('status').textContent = 'Restoring';
-          $('terminal-hint').textContent = message.active ?
-            'Click the terminal to type. Ctrl+C reaches the application.' : 'Recorded output of the latest terminal. No process was started.';
+          $('terminal-hint').textContent = message.active ? 'Click the terminal to type. Ctrl+C reaches the application.' :
+            terminalPicker.shownRun ? earlierHint(terminalPicker.shown()) : 'Recorded output of the latest terminal. No process was started.';
+          void loadTerminals(message.session);
           view.options.disableStdin = true;
           history.replaceState(null, '', sessionURL(message.session));
           refreshSessions();
@@ -492,6 +508,7 @@ async function openSession(session: SessionView, launch?: Launch): Promise<void>
           $('terminal-hint').textContent = 'Process ended. Showing saved terminal output.';
           if (message.error) notice(message.error);
           refreshSessions();
+          void loadTerminals(selected.id ?? '');
           break;
         case 'history-end': view.options.disableStdin = true; break;
       }
@@ -525,6 +542,18 @@ async function loadHandoff(id: string): Promise<void> {
     const info = await call(server, { operation: 'session-handoff', session: id });
     if (selected?.id === id) handoff = { session: id, info };
   } catch { if (handoff?.session === id) handoff = null; }
+  controls();
+}
+
+// A missing list only hides the terminal selector. Only the newest request updates it.
+async function loadTerminals(id: string): Promise<void> {
+  if (!server || !id) return;
+  const generation = ++terminalsGeneration;
+  let terminals: TerminalInfo[] = [];
+  try { terminals = await call(server, { operation: 'session-terminals', session: id }); } catch { /* Hide the selector. */ }
+  if (generation !== terminalsGeneration || selected?.id !== id) return;
+  terminalPicker.update(terminals);
+  if (terminalPicker.shownRun && connection?.ready) $('terminal-hint').textContent = earlierHint(terminalPicker.shown());
   controls();
 }
 
@@ -571,6 +600,7 @@ async function showWelcome(): Promise<void> {
   await preparation.close();
   await composer.select('');
   selected = null;
+  terminalPicker.update([]); terminalPicker.show('');
   terminal?.dispose(); terminal = null; fit = null;
   sessionSplit.setEnabled(false);
   $('session-view').hidden = true;
@@ -751,6 +781,8 @@ async function initialize() {
     $('status').textContent = 'Stopped';
     notice('Session stopped. Terminal output is saved.');
     await refreshSessions();
+    // A view of an earlier terminal gets no exit message.
+    await loadTerminals(selected.id);
   });
   new ResizeObserver(requestFit).observe($('terminal'));
   window.addEventListener('pagehide', () => connection?.close());
@@ -766,7 +798,12 @@ async function initialize() {
     const route = parseRoute(location.pathname);
     if (route.page === 'settings') await action(showSettings);
     else if (route.page === 'session') await action(() => openSession(sessions.find(s => s.id === route.id) || { id: route.id, title: 'Session', workspace: '', status: 'unknown' }));
-    setInterval(() => { if (!document.hidden && !busy) refreshSessions(); }, 5000);
+    setInterval(() => {
+      if (document.hidden || busy) return;
+      refreshSessions();
+      // A new terminal has no run until its process starts. Read the list again until then.
+      if (selected?.id && terminalPicker.starting()) void loadTerminals(selected.id);
+    }, 5000);
   } catch (error) {
     server = null;
     $('connection').textContent = '○ Server unavailable';

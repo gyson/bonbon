@@ -187,7 +187,10 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 		err := s.store.RenameSession(request.Session, request.Name)
 		s.reply(conn, map[string]bool{"renamed": err == nil}, err)
 	case "session-resume":
-		s.resumeSession(conn, request.Session, request.Size)
+		s.resumeSession(conn, request.Session, request.Run, request.Size)
+	case "session-terminals":
+		result, err := s.terminals(request.Session)
+		s.reply(conn, result, err)
 	case "session-handoff":
 		result, err := s.handoffInfo(request.Session)
 		s.reply(conn, result, err)

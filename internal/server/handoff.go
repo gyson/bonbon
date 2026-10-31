@@ -159,16 +159,12 @@ func (s *Server) writeHandoff(session history.Session) error {
 		t := handoffTerminal{RunRecord: run, Number: i + 1}
 		numbers[run.ID] = t.Number
 		var start struct {
-			Tool      string `json:"tool"`
 			Continues string `json:"continues"`
 		}
 		if len(run.Start) > 0 {
 			json.Unmarshal(run.Start, &start)
 		}
-		t.Tool, t.Continues = start.Tool, numbers[start.Continues]
-		if t.Tool == "" && i == 0 && session.Preparation != nil {
-			t.Tool = session.Preparation.ToolName
-		}
+		t.Tool, t.Continues = runTool(run.Start, i == 0, session), numbers[start.Continues]
 		if run.First != 0 {
 			view, err := s.loadScreen(session.ID, run.ID)
 			if err != nil {
