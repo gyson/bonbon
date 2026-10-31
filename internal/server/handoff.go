@@ -164,7 +164,7 @@ func (s *Server) writeHandoff(session history.Session) error {
 		if len(run.Start) > 0 {
 			json.Unmarshal(run.Start, &start)
 		}
-		t.Tool, t.Continues = runTool(run.Start, i == 0, session), numbers[start.Continues]
+		t.Tool, t.Continues = history.RunTool(run.Start, i == 0, session.Preparation), numbers[start.Continues]
 		if run.First != 0 {
 			view, err := s.loadScreen(session.ID, run.ID)
 			if err != nil {

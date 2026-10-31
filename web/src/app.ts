@@ -1,6 +1,7 @@
 import { call, encodeBytes, errorMessage, VERSION } from './protocol.js';
 import type { Handoff, Project, Preparation, Run, TerminalInfo, Tool, Worktree, ServerInfo, SessionInfo, StreamRequest } from './protocol.js';
 import { HandoffPrompt } from './handoff-prompt.js';
+import { HistorySearch } from './history-search.js';
 import { canContinue, continueHint, defaultContinueTool } from './continue.js';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -18,6 +19,7 @@ import { TerminalPicker, earlierHint } from './terminal-picker.js';
 import { homePath, parseRoute, sessionURL, settingsPath } from './route.js';
 
 const elements = {
+  'history-open': element('history-open', HTMLButtonElement),
   'home-link': element('home-link', HTMLAnchorElement),
   'sessions-open': element('sessions-open', HTMLButtonElement),
   'archives-open': element('archives-open', HTMLButtonElement),
@@ -134,6 +136,7 @@ const terminalPicker = new TerminalPicker({
   select: run => action(async () => { if (selected?.id) await openSession(selected, undefined, run); }),
   refresh: () => { if (selected?.id) void loadTerminals(selected.id); },
 });
+const historySearch = new HistorySearch(() => server);
 new Sidebar();
 
 let showingSettings = false;
@@ -172,6 +175,7 @@ function heading(title: string, tab = title) {
 }
 
 function controls() {
+  $('history-open').disabled = busy || !server;
   const launch = selected?.preparation;
   $('launch-summary').hidden = showingSettings || !launch || selected?.status === 'draft';
   $('launch-summary').textContent = launch ? `${launch.toolName} · ${launch.command || 'Interactive shell'}` : '';
@@ -736,6 +740,17 @@ async function initialize() {
       }
     });
   };
+  $('history-open').onclick = () => historySearch.open({
+    ...(selected?.id ? { session: selected.id, title: selected.title } : {}),
+    ...(selected?.projectId ? { project: selected.projectId, projectName: projects.find(project => project.id === selected?.projectId)?.name || 'This project' } : {}),
+  });
+  window.addEventListener('keydown', event => {
+    if ((!event.metaKey && !event.ctrlKey) || !event.shiftKey || event.altKey || event.key.toLowerCase() !== 'f') return;
+    if (document.querySelector('dialog[open]') || $('history-open').disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) $('history-open').click();
+  }, true);
   $('refresh').onclick = refreshSessions;
   $('filter').oninput = () => {
     pageOffset = 0;

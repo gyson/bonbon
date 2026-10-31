@@ -179,7 +179,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/19`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/20`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -193,6 +193,9 @@ Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in 
 session. Protocol 19 adds `session-terminals` and an optional `run` for
 `session-resume`, so a view can show an earlier terminal. SQLite format 6 does not
 change.
+
+Protocol 20 adds `history-search` and `history-context`. These operations read existing
+recordings without schema changes. SQLite format 6 remains current.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -481,10 +484,97 @@ Large interrupted recordings can take longer to reconstruct. This restores a dis
 not a process or native agent context. Terminal dimensions are limited to 2–512 columns
 and 1–256 rows to bound emulator memory.
 
-Session views show the server-rendered terminal and message editor. The only text
-history in the UI is the list of sent messages. There is no browser SQL client. The
-`bonbon query` command reads archived events. There is no semantic chat transcript or
-file/diff view.
+Session views show the server-rendered terminal and message editor. The UI also provides
+sent messages and recorded-output search. There is no browser SQL client. The `bonbon
+query` command reads archived events. There is no semantic chat transcript or file/diff
+view.
+
+### History search
+
+**Search history** opens a modal dialog with a result list and a context pane.
+Command+Shift+F on macOS and Ctrl+Shift+F open the same dialog. Ctrl+F remains available
+to terminal programs. The dialog does not send input, resize the PTY, or change sessions.
+Closing it leaves recording and the active session connection running.
+
+The selected session is the default scope. This scope includes all its earlier
+terminals. **This project** uses current project membership. **All sessions** includes
+standalone sessions and other projects. Every scope includes archived sessions. Without
+a selected session, the dialog selects **All sessions** and waits for search text.
+
+Search matches literal text of 1–256 Unicode characters. It ignores case through simple
+Unicode folding unless **Match case** is selected. It does not expand characters or
+normalize Unicode. Wildcards, SQL syntax, and markup have no special meaning.
+
+The history service uses parameterized SQLite reads on a separate read-only connection.
+It streams existing `output` event text through bounded matching state for each run.
+Matches can cross any number of event boundaries. They never cross terminals or sessions.
+Original events remain unchanged. There is no persistent search index or schema change.
+
+Results follow recording order, from oldest to newest. A match uses the event that
+completes its text. Each result identifies its session, terminal number, recorded tool,
+and time. Search and the terminal selector use the same tool-name fallback.
+For an older first terminal without a recorded tool, they use the saved preparation.
+Other missing names appear as **Tool not recorded**. The initial page has at most 20 results.
+**Show more results** appends the next page below them.
+
+The status says **results loaded** while more matches remain. Otherwise, it reports the
+final count and hides that button.
+
+The first page fixes the highest event sequence. Later pages and context reads use that
+same cutoff, so new output does not move existing results. A new search includes later
+output. Each page scans at most 32 MiB or 100,000 nonempty output events, with a
+five-second deadline. Empty text does not consume the event limit.
+
+Search reads fixed ranges of 4,096 event sequences in primary-key order. Project scope
+cannot sort the whole project before returning its first row. Each completed range
+advances the cursor, including ranges with only empty or out-of-scope events.
+
+A bounded scan returns its results, an `incomplete` flag, and a cursor for the next
+character when progress permits continuation. The status shows **Search incomplete**,
+and **Continue search** reads forward from that cursor. If the deadline permits no
+progress, search hides continuation and asks for a smaller scope or another attempt.
+It preserves the incomplete state and any results. An empty partial page remains
+incomplete. A later page restores bounded lookbehind per terminal, so split phrases and overlapping matches survive the boundary.
+Completed scans report the final count. Caller cancellation stops the request.
+
+The service bounds matcher storage to 262,144 source positions. Evicted state is rebuilt
+from recorded lookbehind. Requests allow at most 50 results. There is no result-offset
+limit or rescan of the whole prefix. Large-archive performance remains unverified.
+
+Each result includes a snippet with the complete match, up to 120 preceding characters,
+and up to 180 following characters across output events of the same terminal.
+Following-text and display reads share a separate one-second budget per page. A failed
+snippet read preserves the available text. Selecting a result loads its full initial
+context separately. A context error preserves the snippet and results.
+**Show more before** and **Show more after** add 512 characters on their respective side.
+Each side stops at 8,192 characters with an explicit limit label. Context reads skip
+empty text and stay within the selected run's output bounds and recording cutoff.
+They have a five-second timeout. Source references retain session, run, sequence, and
+character offsets.
+
+Each read caches terminal metadata and first/last output sequences after one event scan
+per session. Context and lookbehind queries use those bounds. Matching results do not
+trigger repeated session scans or full context reads.
+
+Changing the query or scope, closing the dialog, or selecting another result cancels
+obsolete requests. The client closes their WebSockets. The server cancels their SQLite
+work on disconnect and stops its disconnect reader after a reply.
+
+The result list and context pane render text nodes with a highlighted match. They never
+execute terminal escapes or interpret HTML or Markdown. **Copy context** copies only the
+displayed text. Late replies cannot replace a newer search or a different selected result.
+On narrow screens, the result list appears above the context pane.
+
+Display text removes the second line break only for verified original CRLF pairs.
+It also recognizes pairs split across output events. Literal blank lines remain visible.
+Stored derived text and match offsets remain unchanged. Rendering and **Copy context**
+use an optional display representation. If a chunk cannot be reconstructed independently,
+its original spacing remains visible.
+
+The dialog labels its content as **Derived terminal output**. Search uses recorded text,
+including output no longer present in the final screen or scrollback. Redraws can repeat
+text, and cursor movement can omit spaces. This view is not an exact conversation transcript.
+Input events, unsent drafts, and attachment contents are outside this search.
 
 A browser check with a synthetic terminal confirmed live reattachment, switching
 sessions, stop followed by history reload, and page reload at a different window width.
@@ -889,6 +979,31 @@ integrations in this version.
 
 ## Validation
 
+History search fixtures cover scope, archived sessions, older terminals, literal wildcard
+characters, Unicode folding, split output, overlapping matches, bounded context, and fixed
+pagination cutoffs. Reopen checks preserve original recording bytes. A concurrent read
+check leaves capture writable. Invalid requests and canceled reads fail explicitly.
+
+Limit fixtures cover more than 100,000 empty updates, nonempty-event and byte limits,
+continued scans, split matches at cursors, interleaved terminals, overlaps, and cutoff
+preservation. Legacy tool fixtures verify the first-terminal fallback. Disconnect fixtures
+verify cancellation and cleanup after a reply. Range fixtures verify project ordering
+without a temporary sort and matches across range boundaries. Deadline fixtures reject
+unchanged continuation cursors. Display fixtures preserve original bytes and offsets,
+CRLF pairs across events, and intentional blank lines.
+
+Frontend fixtures verify oldest-first page appends, plain-text rendering of markup, and
+explicit scope changes. They also verify rejection of stale search and context replies.
+A real temporary server check searches two synthetic shell terminals while the latest
+terminal remains writable. It reads earlier context, archives the session, restarts the
+server, and searches the same recordings again. No real agent CLI is used.
+
+A browser check with synthetic history verified session, project, and all-session scopes.
+It verified archived results, oldest-first pagination, context expansion, case matching,
+and plain-text rendering of markup. A live synthetic shell remained usable after search.
+The dialog also fit a 390-pixel viewport. The browser reported no errors or warnings.
+The temporary shell and server were stopped after validation.
+
 Archive fixtures cover more than 100 saved drafts, search before pagination, and literal
 wildcard characters. They cover restoration after project removal and preservation of
 draft revisions and original attachment bytes. They also verify rejection of active runs
@@ -1113,13 +1228,21 @@ background groups. Linux runtime behavior and large archives are unverified.
 A session has at most one live terminal. The UI shows an earlier terminal only as its
 saved final screen, one terminal at a time. It cannot show two terminals side by side.
 The terminal list reads every start event of the session, so a long session makes the
-list slower to load. A handoff transcript has at most the newest 10,000 scrollback rows
-of a terminal. The server rebuilds the handoff folder while it holds the launch lock. A
-large interrupted recording can delay other launches during this rebuild. A transcript
-keeps only the last screen of a program that uses the alternate screen, such as Codex
-CLI 0.160.0 without `--no-alt-screen`. The session header shows the tool of the original
-launch, also after a continue with another tool. The prompt gives the new agent a record
-of earlier work. It does not restore the internal state of the earlier agent.
+list slower to load.
+
+Search history can read matching output and bounded context from earlier terminals.
+Their saved transcripts remain available in the handoff folder, and `bonbon query` reads
+their original events.
+
+A handoff transcript has at most the newest 10,000 scrollback rows of a terminal.
+The server rebuilds the handoff folder while it holds the launch lock. A large interrupted
+recording can delay other launches during this rebuild. A transcript keeps
+only the last screen of a program that uses the alternate screen, such as Codex CLI
+0.160.0 without `--no-alt-screen`.
+
+The session header shows the tool of the original launch, also after a continue with
+another tool. The prompt gives the new agent a record of earlier work. It does not
+restore the internal state of the earlier agent.
 
 Each session has one shared draft. Other views update after each save, about half a
 second after typing stops. They do not show each keystroke. When two views edit at the

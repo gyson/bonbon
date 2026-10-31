@@ -8,14 +8,22 @@ import (
 // Text converts terminal bytes to searchable text. It does not emulate a screen or
 // parse messages. Original bytes remain authoritative.
 type Text struct {
-	state   byte
-	pending []byte
+	state      byte
+	pending    []byte
+	previousCR bool
 }
 
 func (p *Text) Push(data []byte) string {
+	text, _ := p.push(data, false)
+	return text
+}
+
+// The optional mask identifies only the LF of an original CRLF pair.
+func (p *Text) push(data []byte, display bool) (string, []bool) {
 	data = append(p.pending, data...)
 	p.pending = nil
 	var out strings.Builder
+	var hidden []bool
 	for len(data) > 0 {
 		if !utf8.FullRune(data) {
 			p.pending = append([]byte(nil), data...)
@@ -23,6 +31,8 @@ func (p *Text) Push(data []byte) string {
 		}
 		r, n := utf8.DecodeRune(data)
 		data = data[n:]
+		hide := p.previousCR && r == '\n'
+		p.previousCR = r == '\r'
 		switch p.state {
 		case 'e':
 			switch {
@@ -62,10 +72,16 @@ func (p *Text) Push(data []byte) string {
 				p.state = 'e'
 			case r == '\r':
 				out.WriteByte('\n')
+				if display {
+					hidden = append(hidden, false)
+				}
 			case r == '\n' || r == '\t' || r >= 32 && r != 127:
 				out.WriteRune(r)
+				if display {
+					hidden = append(hidden, hide)
+				}
 			}
 		}
 	}
-	return out.String()
+	return out.String(), hidden
 }

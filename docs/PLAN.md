@@ -19,8 +19,8 @@ services. Do not add a separate browser session store or database writer.
   Keep original events authoritative and verify checkpoint/reconstruction boundaries.
 - Extend terminal compatibility checks for graphics, extended keyboard protocols and
   soft-wrap copy semantics. Test the actual agent CLI versions before claiming support.
-- Add history search and pagination. Label derived terminal text clearly. Terminal
-  chunks are not exact chat messages.
+- Profile history search with large archives. Add an index if bounded scans do not meet
+  daily search needs. Preserve original events and source references.
 - Add read-only code diff and file views for the selected workspace. File access belongs
   in the core, scoped to that workspace.
 - Add verified agent-specific attachment delivery where plain file references are
@@ -66,8 +66,7 @@ Status: deferred. Design a complete feature to add, edit, and apply custom conte
 projects and sessions, including General. The scope and interface remain undecided.
 BonBon does not insert context or deliver it automatically.
 
-- Include guidance for searches across sessions with `bonbon query` in this feature. Do
-  not add a separate history-search button.
+- Include guidance for searches across sessions with `bonbon query` in this feature.
 - Keep saved context in SQLite. Make the selected context and its scope visible to the
   user before applying it.
 - Verify delivery through each agent's supported interfaces. Do not type instructions

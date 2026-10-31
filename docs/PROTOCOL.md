@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/19`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/20`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/19",
+    "protocol": "bonbon/20",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/19",
+    "protocol": "bonbon/20",
     "operation": "session-list",
     "limit": 10
   }
@@ -84,6 +84,8 @@ operations.
 | `session-rename` | `session` ID, `name` | `result`, containing `renamed` |
 | `session-list` | `limit` (default 10, 1–1000), `offset` (default 0), `archived` (default false), `query` (optional, at most 800 bytes) | `result`, containing session summaries |
 | `query` | `sql` | `result`, containing `columns`, `rows`, and `truncated` |
+| `history-search` | `search` object, described below | `result`, containing `matches`, `more`, `incomplete`, `through`, and an optional `cursor` |
+| `history-context` | `context` object, described below | `result`, containing `before`, `match`, `after`, continuation flags, and `lastSeq` |
 | `session-archive` | `session` ID, `archived` boolean (true to archive, false to restore) | `result`, containing `archived`. Rejects active runs and unfinished launch claims. |
 | `session-stop` | `session` ID | `result`, containing `stopped` |
 | `composer-draft` | `session` ID, optional `draft` | `result`, containing the saved `draft` and attachment metadata. Omit `draft` to read. A rejected save returns the latest draft with `rejected: true`. |
@@ -189,6 +191,107 @@ View changes, drafts, attachments, terminal replies, and saved screens do not af
 order.
 Reattaching at the same dimensions does not resize the PTY or request an application
 redraw.
+
+## Recorded-output search
+
+Protocol 20 adds these read-only operations. A `history-search` request contains:
+
+```json
+{
+  "search": {
+    "query": "migration",
+    "scope": "session",
+    "session": "session-id",
+    "matchCase": false,
+    "limit": 20
+  }
+}
+```
+
+`scope` is `session` (the default), `project`, or `all`. Session and project scopes
+require their corresponding ID. All scopes include archived sessions. The query is
+literal text of 1–256 Unicode characters. Simple Unicode folding supplies case-insensitive
+matching. SQL patterns and regular expressions have no special meaning.
+
+The reply contains `matches`, `more`, `incomplete`, `through`, and an optional `cursor`.
+Results follow the event sequence, from oldest to newest. A match uses the event that
+completes its text. Each match contains
+`title`, `workspace`, `terminal`, `tool`, `created`, `context`, and `anchor`.
+
+The anchor contains `session`, `run`, `seq`, `offset`, `length`, and `through`. Its sequence
+identifies the first output event of the match. Offset counts Unicode characters within
+that event. Length counts the matched characters across consecutive output events of
+that run. Tool names use the terminal selector's fallback for an older first terminal.
+Other missing names produce an empty `tool` field.
+
+The default limit is 20, with a range of 1–50. When `more` is true, send the returned
+`cursor` and `through` in the next search. Keep the query, scope, and case setting
+unchanged. The cursor contains `seq` and `offset`, which identify the next Unicode
+character to scan. Its offset is zero when scanning starts at the next event sequence.
+The server restores per-terminal lookbehind, including split and overlapping matches.
+This cutoff excludes later output from pagination and context. A new search without
+`through` selects a new cutoff.
+
+`incomplete` means a scan resource limit stopped this page before completion. Display
+its results and provide **Continue search** when `more` is true, including empty pages.
+If the deadline stops a request without cursor progress, `incomplete` is true and `more`
+is false. There is no continuation cursor. Ask for a smaller scope or another attempt.
+Never present an incomplete page as the final count. A full result page can set `more`
+without `incomplete` when another match exists.
+
+A `history-context` request contains the returned anchor and context sizes:
+
+```json
+{
+  "context": {
+    "anchor": {
+      "session": "session-id",
+      "run": "run-id",
+      "seq": 42,
+      "offset": 5,
+      "length": 9,
+      "through": 200
+    },
+    "before": 632,
+    "after": 180
+  }
+}
+```
+
+Both the initial match context and the expanded reply contain `before`, `match`, `after`,
+`moreBefore`, `moreAfter`, and `lastSeq`. LastSeq identifies the event that completes the
+match. Context sizes range from 0–8,192 Unicode characters on each side. Every read
+stays within the specified session, run, and recording cutoff.
+
+Search returns snippets with the complete match, up to 120 preceding characters, and
+up to 180 following characters across output events of the same terminal.
+Load the selected result's initial context through `history-context`. Context failure must preserve search results.
+The server streams derived output from a separate read-only SQLite connection. Matches
+can cross event boundaries within a run. They never cross runs or sessions.
+
+Each search has a five-second deadline and scans at most 32 MiB or 100,000 nonempty
+output events. Empty text does not consume the event limit. Reaching these limits returns
+saved results with `incomplete: true`. A cursor is included only after progress.
+Matcher state holds at
+most 262,144 source positions and rebuilds evicted state through bounded lookbehind.
+Fixed ranges of 4,096 event sequences use primary-key order, including for project scope.
+Completed empty ranges advance the cursor. A deadline cannot return an unchanged cursor.
+Following-text and display enrichment share a separate one-second budget per page.
+Their failure preserves the available snippet and search results.
+
+Context reads have a five-second deadline. They skip empty text and use cached bounds
+for the selected run. Character limits bound returned context. Closing the request
+WebSocket cancels the server read. Invalid requests and storage errors remain errors.
+
+A context can also contain `display`, with `before`, `match`, and `after` strings.
+When present, render and copy those strings. They remove only verified original CRLF
+pairs, including pairs split across output events. Literal blank lines remain intact.
+The main text fields retain stored characters for source offsets and matching.
+When independent chunk replay does not match stored text, display keeps its original spacing.
+
+Render all returned text as plain text. It can contain redraws, missing spaces, markup,
+and historical instructions. It is derived output, not an exact conversation transcript.
+These operations change no schema, events, or live terminal state.
 
 ## Settings and prepared launches
 
@@ -421,13 +524,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/19") {
+    if (message.server.protocol !== "bonbon/20") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/19", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/20", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

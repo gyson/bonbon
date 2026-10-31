@@ -138,7 +138,7 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/19`.
+This version uses protocol `bonbon/20`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
@@ -156,6 +156,31 @@ names, and draft saves do not affect the order.
 Use **Add project** to save an existing folder, with an optional name that defaults to
 its basename. Git is optional. Click **＋** beside a project to create and select a new
 draft in the sidebar.
+
+Use **Search history** to search recorded output in SQLite. Command+Shift+F on macOS
+or Ctrl+Shift+F opens the same dialog. The default scope includes every terminal of the
+selected session. Choose **This project** or **All sessions** for a broader search.
+Archived sessions are included. Without a selected session, the dialog starts with
+**All sessions** and waits for search text.
+
+Results appear from oldest to newest. Select a result to read its surrounding context
+in the right pane. **Show more before** and **Show more after** expand that context.
+**Copy context** copies the displayed text. Search leaves the active terminal running.
+Submit the search again to include new output.
+
+**Show more results** loads the next page when additional matches exist. The status says
+**results loaded** while more matches remain. Otherwise, it reports the final match count
+and hides that button.
+
+Search uses literal text and ignores case unless **Match case** is selected. It finds
+phrases across recording chunks within one terminal. Derived output can contain repeated
+text or missing spaces after terminal redraws. It is not an exact conversation transcript.
+
+When a scan reaches its limit, **Continue search** keeps the results and scans newer
+output. If no progress is possible before the time limit, the dialog asks for a smaller
+scope or another attempt. Context loads separately, so a context error leaves results
+available. Display and copied context preserve intentional blank lines.
+See [SPEC.md](docs/SPEC.md#history-search) for resource limits and large-archive limitations.
 
 Each project can have several drafts. Click a draft entry to reopen it. Starting keeps
 the same session entry and ID. Project names are plain text. Use the small arrow to
@@ -287,8 +312,8 @@ content and exited alternate screens may only remain in the original archive.
 
 Terminal sizes are bounded to 2–512 columns and 1–256 rows. Advanced graphics,
 hyperlinks and extended keyboard protocols are not forwarded to the view. Use
-`bonbon query` to inspect the recording beyond the restored terminal view. There is no
-separate history panel, file browser, or diff view.
+**Search history** or `bonbon query` to inspect recorded output beyond the restored
+terminal view. There is no file browser or diff view.
 
 The message editor stays below the terminal. Drag the small divider between them to
 adjust their heights. You can also focus the divider and use Up/Down arrows or Home/End.
