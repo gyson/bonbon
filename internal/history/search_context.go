@@ -167,6 +167,7 @@ func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (resu
 		left = left[1:]
 	}
 	result.Before = positionText(left)
+	result.positions.before = left
 	after, err := searchStatement(conn, `SELECT seq,text FROM events
         WHERE session_id=? AND run_id=? AND kind='output' AND text<>'' AND seq>=? AND seq<=? ORDER BY seq`, a.Session, a.Run, a.Seq, run.last)
 	if err != nil {
@@ -174,6 +175,7 @@ func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (resu
 	}
 	defer after.Close()
 	var right []rune
+	var rightPositions []searchPosition
 	for len(right) < a.Length+request.After+1 && after.Step() {
 		text := []rune(after.ColumnText(1))
 		if after.ColumnInt64(0) == a.Seq {
@@ -182,6 +184,13 @@ func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (resu
 		count := min(len(text), a.Length+request.After+1-len(right))
 		if result.LastSeq == 0 && len(right)+count >= a.Length {
 			result.LastSeq = after.ColumnInt64(0)
+		}
+		start := 0
+		if after.ColumnInt64(0) == a.Seq {
+			start = a.Offset
+		}
+		for i, char := range text[:count] {
+			rightPositions = append(rightPositions, searchPosition{after.ColumnInt64(0), start + i, char})
 		}
 		right = append(right, text[:count]...)
 	}
@@ -192,12 +201,15 @@ func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (resu
 		return result, errors.New("history context does not contain the complete match")
 	}
 	result.Match = string(right[:a.Length])
+	result.positions.match = rightPositions[:a.Length]
 	right = right[a.Length:]
 	if len(right) > request.After {
 		result.MoreAfter = true
 		right = right[:request.After]
 	}
 	result.After = string(right)
+	result.positions.after = rightPositions[a.Length : a.Length+len(right)]
+	(&searchDisplayReader{conn: conn}).normalize(a.Session, a.Run, &result)
 	return result, nil
 }
 

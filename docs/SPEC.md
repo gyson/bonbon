@@ -525,10 +525,16 @@ same cutoff, so new output does not move existing results. A new search includes
 output. Each page scans at most 32 MiB or 100,000 nonempty output events, with a
 five-second deadline. Empty text does not consume the event limit.
 
+Search reads fixed ranges of 4,096 event sequences in primary-key order. Project scope
+cannot sort the whole project before returning its first row. Each completed range
+advances the cursor, including ranges with only empty or out-of-scope events.
+
 A bounded scan returns its results, an `incomplete` flag, and a cursor for the next
-character. The status shows **Search incomplete**, and **Continue search** reads forward
-from that cursor. An empty partial page remains incomplete. A later page restores bounded
-lookbehind per terminal, so split phrases and overlapping matches survive the boundary.
+character when progress permits continuation. The status shows **Search incomplete**,
+and **Continue search** reads forward from that cursor. If the deadline permits no
+progress, search hides continuation and asks for a smaller scope or another attempt.
+It preserves the incomplete state and any results. An empty partial page remains
+incomplete. A later page restores bounded lookbehind per terminal, so split phrases and overlapping matches survive the boundary.
 Completed scans report the final count. Caller cancellation stops the request.
 
 The service bounds matcher storage to 262,144 source positions. Evicted state is rebuilt
@@ -536,8 +542,10 @@ from recorded lookbehind. Requests allow at most 50 results. There is no result-
 limit or rescan of the whole prefix. Large-archive performance remains unverified.
 
 Each result includes a snippet with the complete match, up to 120 preceding characters,
-and up to 180 following characters from its completion event. Selecting a result loads
-its full initial context separately. A context error preserves the snippet and results.
+and up to 180 following characters across output events of the same terminal.
+Following-text and display reads share a separate one-second budget per page. A failed
+snippet read preserves the available text. Selecting a result loads its full initial
+context separately. A context error preserves the snippet and results.
 **Show more before** and **Show more after** add 512 characters on their respective side.
 Each side stops at 8,192 characters with an explicit limit label. Context reads skip
 empty text and stay within the selected run's output bounds and recording cutoff.
@@ -556,6 +564,12 @@ The result list and context pane render text nodes with a highlighted match. The
 execute terminal escapes or interpret HTML or Markdown. **Copy context** copies only the
 displayed text. Late replies cannot replace a newer search or a different selected result.
 On narrow screens, the result list appears above the context pane.
+
+Display text removes the second line break only for verified original CRLF pairs.
+It also recognizes pairs split across output events. Literal blank lines remain visible.
+Stored derived text and match offsets remain unchanged. Rendering and **Copy context**
+use an optional display representation. If a chunk cannot be reconstructed independently,
+its original spacing remains visible.
 
 The dialog labels its content as **Derived terminal output**. Search uses recorded text,
 including output no longer present in the final screen or scrollback. Redraws can repeat
@@ -973,7 +987,10 @@ check leaves capture writable. Invalid requests and canceled reads fail explicit
 Limit fixtures cover more than 100,000 empty updates, nonempty-event and byte limits,
 continued scans, split matches at cursors, interleaved terminals, overlaps, and cutoff
 preservation. Legacy tool fixtures verify the first-terminal fallback. Disconnect fixtures
-verify cancellation and cleanup after a reply.
+verify cancellation and cleanup after a reply. Range fixtures verify project ordering
+without a temporary sort and matches across range boundaries. Deadline fixtures reject
+unchanged continuation cursors. Display fixtures preserve original bytes and offsets,
+CRLF pairs across events, and intentional blank lines.
 
 Frontend fixtures verify oldest-first page appends, plain-text rendering of markup, and
 explicit scope changes. They also verify rejection of stale search and context replies.
@@ -986,9 +1003,6 @@ It verified archived results, oldest-first pagination, context expansion, case m
 and plain-text rendering of markup. A live synthetic shell remained usable after search.
 The dialog also fit a 390-pixel viewport. The browser reported no errors or warnings.
 The temporary shell and server were stopped after validation.
-
-The later cursor and cancellation changes have fixture coverage. Their browser checks
-could not run because Work settings disabled browser use.
 
 Archive fixtures cover more than 100 saved drafts, search before pagination, and literal
 wildcard characters. They cover restoration after project removal and preservation of

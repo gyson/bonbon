@@ -62,7 +62,8 @@ export class HistorySearch {
     this.copy.onclick = async () => {
       if (!this.context) return;
       try {
-        await navigator.clipboard.writeText(this.context.before + this.context.match + this.context.after);
+        const text = this.context.display ?? this.context;
+        await navigator.clipboard.writeText(text.before + text.match + text.after);
         this.contextStatus.textContent = 'Copied the displayed context.';
       } catch (error) { this.contextStatus.textContent = `Cannot copy context: ${errorMessage(error)}`; }
     };
@@ -148,7 +149,8 @@ export class HistorySearch {
       page.matches.forEach((hit, i) => this.list.append(this.item(hit, first + i)));
       this.more.hidden = !page.more;
       this.more.textContent = page.incomplete ? 'Continue search' : 'Show more results';
-      this.message(page.incomplete ? `${this.hits.length} results loaded · Search incomplete · Oldest first. Continue search to reach newer output.` : this.hits.length ? `${this.hits.length} ${this.hits.length === 1 ? 'result' : 'results'}${page.more ? ' loaded' : ''} · Oldest first`
+      const count = `${this.hits.length} ${this.hits.length === 1 ? 'result' : 'results'}`;
+      this.message(page.incomplete ? `${count} loaded · Search incomplete · Oldest first. ${page.more ? 'Continue search to reach newer output.' : 'No progress before the time limit. Select a smaller scope or try again.'}` : this.hits.length ? `${count}${page.more ? ' loaded' : ''} · Oldest first`
         : 'No matching output. Try another search term or a broader scope.');
       if (this.selected < 0 && this.hits.length) this.select(0);
     } catch (error) {
@@ -172,11 +174,12 @@ export class HistorySearch {
     const snippet = document.createElement('span');
     snippet.className = 'history-snippet';
     const mark = document.createElement('mark');
-    mark.textContent = hit.context.match;
-    const before = Array.from(hit.context.before).slice(-60).join('');
-    const after = Array.from(hit.context.after).slice(0, 90).join('');
-    snippet.append(document.createTextNode((hit.context.moreBefore || hit.context.before.length > before.length ? '…' : '') + before),
-      mark, document.createTextNode(after + (hit.context.moreAfter || hit.context.after.length > after.length ? '…' : '')));
+    const text = hit.context.display ?? hit.context;
+    mark.textContent = text.match;
+    const before = Array.from(text.before).slice(-60).join('');
+    const after = Array.from(text.after).slice(0, 90).join('');
+    snippet.append(document.createTextNode((hit.context.moreBefore || text.before.length > before.length ? '…' : '') + before),
+      mark, document.createTextNode(after + (hit.context.moreAfter || text.after.length > after.length ? '…' : '')));
     button.append(meta, title, snippet);
     item.append(button);
     return item;
@@ -208,8 +211,9 @@ export class HistorySearch {
     const hit = this.hits[this.selected];
     if (!hit || !this.context) return;
     const mark = document.createElement('mark');
-    mark.textContent = this.context.match;
-    this.output.replaceChildren(document.createTextNode(this.context.before), mark, document.createTextNode(this.context.after));
+    const text = this.context.display ?? this.context;
+    mark.textContent = text.match;
+    this.output.replaceChildren(document.createTextNode(text.before), mark, document.createTextNode(text.after));
     this.source.textContent = `Match: events ${hit.anchor.seq}–${this.context.lastSeq} · Session ${hit.anchor.session} · Run ${hit.anchor.run}`;
     this.controls();
   }

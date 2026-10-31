@@ -13,6 +13,7 @@ const (
 	searchBytes  = 32 << 20
 	searchEvents = 100000
 	contextRunes = 8192
+	searchWindow = 4096
 )
 
 type SearchFilter struct {
@@ -43,13 +44,21 @@ type ContextRequest struct {
 	After  int          `json:"after"`
 }
 
+type SearchDisplay struct {
+	Before string `json:"before"`
+	Match  string `json:"match"`
+	After  string `json:"after"`
+}
+
 type SearchContext struct {
-	Before     string `json:"before"`
-	Match      string `json:"match"`
-	After      string `json:"after"`
-	MoreBefore bool   `json:"moreBefore"`
-	MoreAfter  bool   `json:"moreAfter"`
-	LastSeq    int64  `json:"lastSeq"`
+	Before     string         `json:"before"`
+	Match      string         `json:"match"`
+	After      string         `json:"after"`
+	MoreBefore bool           `json:"moreBefore"`
+	MoreAfter  bool           `json:"moreAfter"`
+	LastSeq    int64          `json:"lastSeq"`
+	Display    *SearchDisplay `json:"display,omitempty"`
+	positions  searchContextPositions
 }
 
 type SearchHit struct {
@@ -60,6 +69,7 @@ type SearchHit struct {
 	Tool      string        `json:"tool"`
 	Created   string        `json:"created"`
 	Context   SearchContext `json:"context"`
+	last      int64
 }
 
 // SearchCursor points to the next character to scan. Offset counts Unicode characters.
@@ -78,7 +88,18 @@ type SearchPage struct {
 
 // Search uses a separate read-only connection. A cursor resumes at the next character.
 // Bounded lookbehind restores matches that cross page and event boundaries.
-func (s *Store) Search(parent context.Context, filter SearchFilter) (page SearchPage, err error) {
+func (s *Store) Search(parent context.Context, filter SearchFilter) (SearchPage, error) {
+	page, err := s.search(parent, filter, 5*time.Second)
+	if err == nil {
+		s.searchSnippets(parent, &page)
+	}
+	if parent.Err() != nil {
+		return page, parent.Err()
+	}
+	return page, err
+}
+
+func (s *Store) search(parent context.Context, filter SearchFilter, timeout time.Duration) (page SearchPage, err error) {
 	page.Matches = []SearchHit{}
 	if filter.Limit == 0 {
 		filter.Limit = 20
@@ -118,7 +139,11 @@ func (s *Store) Search(parent context.Context, filter SearchFilter) (page Search
 	default:
 		return page, errors.New("unknown history search scope")
 	}
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	page.Through = filter.Through
+	if next.Seq == 0 {
+		next.Seq = 1
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	// A scan deadline preserves completed results. Caller cancellation stops the request.
 	defer func() {
@@ -127,7 +152,15 @@ func (s *Store) Search(parent context.Context, filter SearchFilter) (page Search
 			return
 		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) && page.Through > 0 {
-			page.More, page.Incomplete, page.Cursor, err = true, true, &next, nil
+			page.Incomplete, err = true, nil
+			initial := SearchCursor{Seq: 1}
+			if filter.Cursor != nil {
+				initial = *filter.Cursor
+			}
+			page.More = next != initial
+			if page.More {
+				page.Cursor = &next
+			}
 		}
 	}()
 	conn, err := s.readConnection(ctx)
@@ -150,18 +183,6 @@ func (s *Store) Search(parent context.Context, filter SearchFilter) (page Search
 		}
 	}
 	page.Through = filter.Through
-	if next.Seq == 0 {
-		next.Seq = 1
-	}
-	args[0], args[1] = next.Seq, page.Through
-	stmt, err := searchStatement(conn, `SELECT e.seq,e.session_id,e.run_id,e.text,e.created
-        FROM events e JOIN sessions s ON s.id=e.session_id
-        JOIN runs r ON r.id=e.run_id AND r.session_id=e.session_id
-        WHERE e.kind='output' AND e.text<>'' AND e.seq>=? AND e.seq<=?`+condition+` ORDER BY e.seq`, args...)
-	if err != nil {
-		return page, err
-	}
-	defer stmt.Close()
 	needle := []rune(filter.Query)
 	for i, r := range needle {
 		needle[i] = searchFold(r, filter.MatchCase)
@@ -179,86 +200,120 @@ func (s *Store) Search(parent context.Context, filter SearchFilter) (page Search
 	reader := searchReader{conn: conn, through: page.Through}
 	states := map[string]*searchMatcher{}
 	bytes, events := 0, 0
-	for stmt.Step() {
-		if err := ctx.Err(); err != nil {
-			return page, err
-		}
-		seq, sid, rid := stmt.ColumnInt64(0), stmt.ColumnText(1), stmt.ColumnText(2)
-		text := []rune(stmt.ColumnText(3))
-		start := 0
-		if seq == next.Seq {
-			start = next.Offset
-		}
-		if start > len(text) {
-			return page, errors.New("invalid history search cursor offset")
-		}
-		if start == len(text) {
-			next = SearchCursor{Seq: seq + 1}
-			continue
-		}
-		size := len(string(text[start:]))
-		if bytes+size > searchBytes || events == searchEvents {
-			page.More, page.Incomplete, page.Cursor = true, true, &next
-			return page, nil
-		}
-		run, err := reader.run(sid, rid)
+	for next.Seq <= page.Through {
+		end := min(page.Through, next.Seq+searchWindow-1)
+		args[0], args[1] = next.Seq, end
+		// Keep events first so project scope cannot sort an entire project before row one.
+		stmt, err := searchStatement(conn, searchEventSQL+condition+` ORDER BY e.seq`, args...)
 		if err != nil {
 			return page, err
 		}
-		state := states[rid]
-		if state == nil {
-			// Rebuild evicted state from recorded lookbehind when its run returns.
-			if (len(states)+1)*(len(needle)+121) > 262144 {
-				clear(states)
+		// Each range closes before the next range starts, including early returns.
+		rangeErr := func() error {
+			defer stmt.Close()
+			for stmt.Step() {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				seq, sid, rid := stmt.ColumnInt64(0), stmt.ColumnText(1), stmt.ColumnText(2)
+				text := []rune(stmt.ColumnText(3))
+				start := 0
+				if seq == next.Seq {
+					start = next.Offset
+				}
+				if start > len(text) {
+					return errors.New("invalid history search cursor offset")
+				}
+				if start == len(text) {
+					next = SearchCursor{Seq: seq + 1}
+					continue
+				}
+				size := len(string(text[start:]))
+				if bytes+size > searchBytes || events == searchEvents {
+					page.More, page.Incomplete, page.Cursor = true, true, &next
+					return errSearchPage
+				}
+				run, err := reader.run(sid, rid)
+				if err != nil {
+					return err
+				}
+				state := states[rid]
+				if state == nil {
+					// Rebuild evicted state from recorded lookbehind when its run returns.
+					if (len(states)+1)*(len(needle)+121) > 262144 {
+						clear(states)
+					}
+					state = &searchMatcher{positions: make([]searchPosition, len(needle)+121)}
+					previous, err := reader.before(sid, rid, seq, start, len(state.positions), run.first)
+					if err != nil {
+						return err
+					}
+					for _, p := range previous {
+						state.push(p, needle, prefix, filter.MatchCase)
+					}
+					states[rid] = state
+				}
+				bytes += size
+				events++
+				for offset := start; offset < len(text); offset++ {
+					if offset%4096 == 0 && ctx.Err() != nil {
+						return ctx.Err()
+					}
+					if state.push(searchPosition{seq, offset, text[offset]}, needle, prefix, filter.MatchCase) {
+						if len(page.Matches) == filter.Limit {
+							page.More, page.Cursor = true, &next
+							return errSearchPage
+						}
+						positions := state.tail(len(needle) + 121)
+						matchStart := len(positions) - len(needle)
+						a := positions[matchStart]
+						before := positions[:matchStart]
+						context := SearchContext{Match: positionText(positions[matchStart:]), LastSeq: seq, MoreBefore: len(before) > 120 || (len(before) > 0 && before[0].seq > run.first)}
+						if len(before) > 120 {
+							before = before[len(before)-120:]
+						}
+						context.Before = positionText(before)
+						context.positions.before = append([]searchPosition(nil), before...)
+						context.positions.match = append([]searchPosition(nil), positions[matchStart:]...)
+						after := text[offset+1:]
+						context.MoreAfter = len(after) > 180 || seq < run.last
+						if len(after) > 180 {
+							after = after[:180]
+						}
+						context.After = string(after)
+						for i, char := range after {
+							context.positions.after = append(context.positions.after, searchPosition{seq, offset + 1 + i, char})
+						}
+						page.Matches = append(page.Matches, SearchHit{
+							Anchor: SearchAnchor{Session: sid, Run: rid, Seq: a.seq, Offset: a.offset, Length: len(needle), Through: page.Through},
+							Title:  run.title, Workspace: run.workspace, Terminal: run.number, Tool: run.tool,
+							Created: stmt.ColumnText(4), Context: context, last: run.last,
+						})
+					}
+					next = SearchCursor{Seq: seq, Offset: offset + 1}
+				}
+				next = SearchCursor{Seq: seq + 1}
 			}
-			state = &searchMatcher{positions: make([]searchPosition, len(needle)+121)}
-			previous, err := reader.before(sid, rid, seq, start, len(state.positions), run.first)
-			if err != nil {
-				return page, err
-			}
-			for _, p := range previous {
-				state.push(p, needle, prefix, filter.MatchCase)
-			}
-			states[rid] = state
+			return stmt.Err()
+		}()
+		if errors.Is(rangeErr, errSearchPage) {
+			return page, nil
 		}
-		bytes += size
-		events++
-		for offset := start; offset < len(text); offset++ {
-			if offset%4096 == 0 && ctx.Err() != nil {
-				return page, ctx.Err()
-			}
-			if state.push(searchPosition{seq, offset, text[offset]}, needle, prefix, filter.MatchCase) {
-				if len(page.Matches) == filter.Limit {
-					page.More, page.Cursor = true, &next
-					return page, nil
-				}
-				positions := state.tail(len(needle) + 121)
-				matchStart := len(positions) - len(needle)
-				a := positions[matchStart]
-				before := positions[:matchStart]
-				context := SearchContext{Match: positionText(positions[matchStart:]), LastSeq: seq, MoreBefore: len(before) > 120 || (len(before) > 0 && before[0].seq > run.first)}
-				if len(before) > 120 {
-					before = before[len(before)-120:]
-				}
-				context.Before = positionText(before)
-				after := text[offset+1:]
-				context.MoreAfter = len(after) > 180 || seq < run.last
-				if len(after) > 180 {
-					after = after[:180]
-				}
-				context.After = string(after)
-				page.Matches = append(page.Matches, SearchHit{
-					Anchor: SearchAnchor{Session: sid, Run: rid, Seq: a.seq, Offset: a.offset, Length: len(needle), Through: page.Through},
-					Title:  run.title, Workspace: run.workspace, Terminal: run.number, Tool: run.tool,
-					Created: stmt.ColumnText(4), Context: context,
-				})
-			}
-			next = SearchCursor{Seq: seq, Offset: offset + 1}
+		if rangeErr != nil {
+			return page, rangeErr
 		}
-		next = SearchCursor{Seq: seq + 1}
+		// A completed empty range is progress too.
+		next = SearchCursor{Seq: end + 1}
 	}
-	return page, stmt.Err()
+	return page, nil
 }
+
+const searchEventSQL = `SELECT e.seq,e.session_id,e.run_id,e.text,e.created
+            FROM events e CROSS JOIN sessions s CROSS JOIN runs r
+            WHERE s.id=e.session_id AND r.id=e.run_id AND r.session_id=e.session_id
+            AND e.kind='output' AND e.text<>'' AND e.seq>=? AND e.seq<=?`
+
+var errSearchPage = errors.New("history search page complete")
 
 type searchPosition struct {
 	seq    int64

@@ -398,3 +398,115 @@ func TestHistorySearchRebuildsEvictedMatchers(t *testing.T) {
 		t.Fatal(page, err)
 	}
 }
+
+func TestHistorySearchExpiredBudgetStopsUnchangedCursor(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	event := searchOutput(t, s, run, "needle")
+	filter := SearchFilter{Query: "needle", Session: session.ID, Through: event.Seq, Cursor: &SearchCursor{Seq: 1}}
+	page, err := s.search(context.Background(), filter, -time.Second)
+	if err != nil || !page.Incomplete || page.More || page.Cursor != nil || len(page.Matches) != 0 {
+		t.Fatal(page, err)
+	}
+}
+
+func TestHistorySearchProjectRangesKeepOrderWithoutSort(t *testing.T) {
+	s := testStore(t)
+	project, err := s.CreateProject("Range fixture", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.CreateSession("Ranges", project.Workspace, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := searchRun(t, s, session.ID)
+	searchEventsFixture(t, s, run, searchWindow-2, "")
+	start := searchOutput(t, s, run, "nee")
+	searchOutput(t, s, run, "dle later text")
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Scope: "project", Project: project.ID})
+	if err != nil || len(page.Matches) != 1 || page.More || page.Matches[0].Anchor.Seq != start.Seq {
+		t.Fatal(page, err)
+	}
+	rows, err := s.db.Query("EXPLAIN QUERY PLAN "+searchEventSQL+" AND s.project_id=? ORDER BY e.seq", 1, searchWindow, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(detail, "TEMP B-TREE") {
+			t.Fatal(detail)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHistorySearchSnippetIncludesLaterEvents(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	searchOutput(t, s, run, "needle")
+	searchOutput(t, s, run, "")
+	searchOutput(t, s, run, " then ")
+	searchOutput(t, s, run, "later text")
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 || page.Matches[0].Context.After != " then later text" || page.Matches[0].Context.MoreAfter {
+		t.Fatal(page, err)
+	}
+}
+
+func TestHistorySearchDisplayPreservesParagraphsAndOriginalOffsets(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	var parser Text
+	for _, raw := range []string{"one\r", "\nneedle", "\r", "\n", "\r\n", "para\n\nend"} {
+		if _, err := s.Append(session.ID, run.ID, "output", []byte(raw), parser.Push([]byte(raw))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original, err := recordedEvents(t, s, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 {
+		t.Fatal(page, err)
+	}
+	hit := page.Matches[0]
+	if hit.Anchor.Offset != 1 || hit.Context.Before != "one\n\n" || hit.Context.Display == nil || hit.Context.Display.Before != "one\n" || hit.Context.Display.After != "\n\npara\n\nend" {
+		t.Fatal(hit)
+	}
+	text, err := s.SearchContext(context.Background(), ContextRequest{Anchor: hit.Anchor, Before: 8192, After: 8192})
+	if err != nil || text.Display == nil || text.Display.Before != "one\n" || text.Display.Match != "needle" || text.Display.After != "\n\npara\n\nend" {
+		t.Fatal(text, err)
+	}
+	after, err := recordedEvents(t, s, session.ID)
+	if err != nil || !reflect.DeepEqual(original, after) {
+		t.Fatal("display changed stored events", err)
+	}
+}
+
+func TestHistorySearchDisplayKeepsUnverifiedChunkText(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	var parser Text
+	for _, raw := range []string{"\x1b[", "0mneedle\r\n"} {
+		if _, err := s.Append(session.ID, run.ID, "output", []byte(raw), parser.Push([]byte(raw))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 || page.Matches[0].Context.Display != nil || page.Matches[0].Context.After != "\n\n" {
+		t.Fatal(page, err)
+	}
+}

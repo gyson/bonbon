@@ -233,7 +233,9 @@ This cutoff excludes later output from pagination and context. A new search with
 `through` selects a new cutoff.
 
 `incomplete` means a scan resource limit stopped this page before completion. Display
-its results and provide **Continue search**, including when the page has no matches.
+its results and provide **Continue search** when `more` is true, including empty pages.
+If the deadline stops a request without cursor progress, `incomplete` is true and `more`
+is false. There is no continuation cursor. Ask for a smaller scope or another attempt.
 Never present an incomplete page as the final count. A full result page can set `more`
 without `incomplete` when another match exists.
 
@@ -262,19 +264,30 @@ match. Context sizes range from 0–8,192 Unicode characters on each side. Every
 stays within the specified session, run, and recording cutoff.
 
 Search returns snippets with the complete match, up to 120 preceding characters, and
-up to 180 following characters from the completion event. Load the selected result's
-initial context through `history-context`. Context failure must preserve search results.
+up to 180 following characters across output events of the same terminal.
+Load the selected result's initial context through `history-context`. Context failure must preserve search results.
 The server streams derived output from a separate read-only SQLite connection. Matches
 can cross event boundaries within a run. They never cross runs or sessions.
 
 Each search has a five-second deadline and scans at most 32 MiB or 100,000 nonempty
 output events. Empty text does not consume the event limit. Reaching these limits returns
-saved results with `incomplete: true` and a continuation cursor. Matcher state holds at
+saved results with `incomplete: true`. A cursor is included only after progress.
+Matcher state holds at
 most 262,144 source positions and rebuilds evicted state through bounded lookbehind.
+Fixed ranges of 4,096 event sequences use primary-key order, including for project scope.
+Completed empty ranges advance the cursor. A deadline cannot return an unchanged cursor.
+Following-text and display enrichment share a separate one-second budget per page.
+Their failure preserves the available snippet and search results.
 
 Context reads have a five-second deadline. They skip empty text and use cached bounds
 for the selected run. Character limits bound returned context. Closing the request
 WebSocket cancels the server read. Invalid requests and storage errors remain errors.
+
+A context can also contain `display`, with `before`, `match`, and `after` strings.
+When present, render and copy those strings. They remove only verified original CRLF
+pairs, including pairs split across output events. Literal blank lines remain intact.
+The main text fields retain stored characters for source offsets and matching.
+When independent chunk replay does not match stored text, display keeps its original spacing.
 
 Render all returned text as plain text. It can contain redraws, missing spaces, markup,
 and historical instructions. It is derived output, not an exact conversation transcript.

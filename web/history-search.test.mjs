@@ -145,3 +145,36 @@ test('an incomplete scan can continue with no matches and retains its cursor aft
   assert.equal(nodes['history-more'].hidden, true);
   assert.match(nodes['history-status'].textContent, /No matching output/);
 });
+
+test('a stopped incomplete page hides continuation and uses the singular result label', async () => {
+  const { nodes, pending, submit } = setup();
+  submit('needle');
+  pending[0].resolve({ matches: [hit(1)], through: 20, more: false, incomplete: true });
+  await tick();
+  assert.match(nodes['history-status'].textContent, /1 result loaded/);
+  assert.doesNotMatch(nodes['history-status'].textContent, /1 results/);
+  assert.match(nodes['history-status'].textContent, /No progress/);
+  assert.equal(nodes['history-more'].hidden, true);
+});
+
+test('rendering and copy use verified display spacing while source text remains available', async () => {
+  const { nodes, pending, submit } = setup();
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let copied;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { async writeText(text) { copied = text; } } } });
+  try {
+    submit('needle');
+    const text = { ...context, before: 'one\n\n', after: '\n\npara\n\nend', display: { before: 'one\n', match: 'needle', after: '\npara\n\nend' } };
+    pending[0].resolve({ matches: [{ ...hit(1), context: text }], through: 20, more: false });
+    await tick();
+    pending[1].resolve(text);
+    await tick();
+    assert.equal(nodes['history-context-text'].textContent, 'one\nneedle\npara\n\nend');
+    await nodes['history-copy'].onclick();
+    assert.equal(copied, 'one\nneedle\npara\n\nend');
+    assert.equal(text.before, 'one\n\n');
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    else delete globalThis.navigator;
+  }
+});

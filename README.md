@@ -177,7 +177,9 @@ phrases across recording chunks within one terminal. Derived output can contain 
 text or missing spaces after terminal redraws. It is not an exact conversation transcript.
 
 When a scan reaches its limit, **Continue search** keeps the results and scans newer
-output. Context loads separately, so a context error leaves the results available.
+output. If no progress is possible before the time limit, the dialog asks for a smaller
+scope or another attempt. Context loads separately, so a context error leaves results
+available. Display and copied context preserve intentional blank lines.
 See [SPEC.md](docs/SPEC.md#history-search) for resource limits and large-archive limitations.
 
 Each project can have several drafts. Click a draft entry to reopen it. Starting keeps

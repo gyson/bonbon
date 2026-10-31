@@ -61,7 +61,8 @@ export interface SentPage { messages: SentMessage[]; more: boolean }
 export type HistoryScope = 'session' | 'project' | 'all';
 export interface HistoryFilter { query: string; scope: HistoryScope; session?: string; project?: string; matchCase: boolean; cursor?: HistoryCursor; limit?: number; through?: number }
 export interface HistoryAnchor { session: string; run: string; seq: number; offset: number; length: number; through: number }
-export interface HistoryContext { before: string; match: string; after: string; moreBefore: boolean; moreAfter: boolean; lastSeq: number }
+export interface HistoryDisplay { before: string; match: string; after: string }
+export interface HistoryContext { display?: HistoryDisplay; before: string; match: string; after: string; moreBefore: boolean; moreAfter: boolean; lastSeq: number }
 export interface HistoryHit { anchor: HistoryAnchor; title: string; workspace: string; terminal: number; tool: string; created: string; context: HistoryContext }
 export interface HistoryCursor { seq: number; offset: number }
 export interface HistoryPage { matches: HistoryHit[]; more: boolean; incomplete: boolean; through: number; cursor?: HistoryCursor }
