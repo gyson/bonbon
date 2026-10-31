@@ -1,5 +1,5 @@
 // The browser and Go CLI use the same protocol. Each connection carries one request.
-export const VERSION = 'bonbon/18';
+export const VERSION = 'bonbon/19';
 
 // These types match internal/protocol/protocol.go.
 export interface Size { rows: number; cols: number }
@@ -21,6 +21,9 @@ export interface Settings { revision: number; defaultTool: string; worktree: boo
 export interface Preparation { revision: number; state: string; toolId: string; toolName: string; command: string; worktree: boolean; base: string; branch: string }
 export interface Worktree { path: string; repository: string; base: string; commit: string; branch: string; state: string }
 export interface Run { id: string; status: string }
+// One terminal of a session. number counts from 1 in start order. A new terminal has an
+// empty run until its process starts.
+export interface TerminalInfo { number: number; run: string; tool: string; status: string; started: string; ended: string }
 export interface PreparedSession { archived: boolean; id: string; projectId: string; title: string; workspace: string; preparation?: Preparation; worktree?: Worktree; run?: Run }
 // BonBon writes the handoff folder before it starts a new terminal in an ended session.
 // available means that the folder has a README, so the prompt can be used now.
@@ -72,10 +75,12 @@ type PrepareRequest = { operation: 'project-draft'; project: string };
 type ConfigRequest = { operation: 'session-config'; session: string; preparation?: Pick<Preparation, 'revision' | 'toolId' | 'worktree' | 'base' | 'branch'>; name?: string };
 type RemoveWorktreeRequest = { operation: 'worktree-remove'; session: string };
 type HandoffRequest = { operation: 'session-handoff'; session: string };
-type RPCRequest = HandoffRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
+type TerminalsRequest = { operation: 'session-terminals'; session: string };
+type RPCRequest = HandoffRequest | TerminalsRequest | ArchiveRequest | SettingsRequest | InspectRequest | PrepareRequest | ConfigRequest | RemoveWorktreeRequest | ListRequest | StopSessionRequest | DraftRequest | SentRequest | UploadRequest | ProjectListRequest | ProjectAddRequest | RenameRequest | ProjectRemoveRequest;
 export type StreamRequest =
   | { operation: 'session-start'; session: string; revision: number; size: Size }
-  | { operation: 'session-resume'; session: string; size: Size }
+  // run shows an earlier terminal. Without run, the view shows the latest terminal.
+  | { operation: 'session-resume'; session: string; size: Size; run?: string }
   // latestRun is the latest run that this view saw. An empty tool selects Shell.
   | { operation: 'session-continue'; session: string; latestRun: string; tool: string; size: Size };
 export type DraftWatchRequest = { operation: 'composer-watch'; session: string };
@@ -261,6 +266,7 @@ export function call(server: ServerInfo, request: InspectRequest): Promise<Repos
 export function call(server: ServerInfo, request: PrepareRequest | ConfigRequest): Promise<PreparedSession>;
 export function call(server: ServerInfo, request: RemoveWorktreeRequest): Promise<{ removed: boolean }>;
 export function call(server: ServerInfo, request: HandoffRequest): Promise<Handoff>;
+export function call(server: ServerInfo, request: TerminalsRequest): Promise<TerminalInfo[]>;
 export function call(server: ServerInfo, request: ProjectListRequest): Promise<Project[]>;
 export function call(server: ServerInfo, request: ProjectAddRequest): Promise<Project>;
 export function call(server: ServerInfo, request: RenameRequest): Promise<{ renamed: boolean }>;

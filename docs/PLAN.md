@@ -50,8 +50,6 @@ implemented. See [SPEC.md](SPEC.md#projects-and-launches).
 Continue in new terminal is implemented. See
 [SPEC.md](SPEC.md#continue-in-a-new-terminal). The following work remains.
 
-- Show the earlier terminals of a session in the UI. Now only the handoff folder and
-  `bonbon query` give access to them.
 - Mark a terminal in the handoff README when it used the alternate screen, so a reader
   knows that its transcript is incomplete.
 - Show the tool of the latest terminal in the session header. Now it shows the tool of

@@ -150,6 +150,69 @@ func (s *Store) Runs(sid string) ([]RunRecord, error) {
 	return result, rows.Err()
 }
 
+// RunStart is one run of a session and the data of its start event. Start is empty when
+// the run has no start event.
+type RunStart struct {
+	Run
+	Start []byte
+}
+
+// RunStarts returns the runs of a session in start order with their start events. It
+// reads the events of the session once, so it costs less than Runs in a long session.
+func (s *Store) RunStarts(sid string) ([]RunStart, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query("SELECT "+runColumns+" FROM runs WHERE session_id=? ORDER BY rowid", sid)
+	if err != nil {
+		return nil, err
+	}
+	var result []RunStart
+	index := map[string]int{}
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		index[run.ID] = len(result)
+		result = append(result, RunStart{Run: run})
+	}
+	if err = errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	rows, err = tx.Query("SELECT run_id,data FROM events WHERE session_id=? AND kind='start' ORDER BY seq", sid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var data []byte
+		if err = rows.Scan(&id, &data); err != nil {
+			return nil, err
+		}
+		// Keep the first start event of each run.
+		if i, ok := index[id]; ok {
+			result[i].Start = data
+			delete(index, id)
+		}
+	}
+	return result, rows.Err()
+}
+
+// SessionRun returns one run of a session. It returns ErrRunNotFound when the session
+// has no run with this ID.
+func (s *Store) SessionRun(sid, id string) (Run, error) {
+	r, err := scanRun(s.db.QueryRow("SELECT "+runColumns+" FROM runs WHERE id=? AND session_id=?", id, sid))
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrRunNotFound
+	}
+	return r, err
+}
+
 func (s *Store) CreateSession(title, workspace, projectID string) (Session, error) {
 	session := Session{ID: ID(), Title: title, Workspace: workspace, Created: Now(), ProjectID: projectID}
 	_, err := s.db.Exec("INSERT INTO sessions(id,title,workspace,created,project_id) VALUES(?,?,?,?,NULLIF(?,''))", session.ID, session.Title, session.Workspace, session.Created, projectID)

@@ -110,3 +110,18 @@ test('an uncertain prepared session start is never submitted twice', async t => 
   assert.equal(errors[0].retrying, false);
   assert.deepEqual(sockets[0].sent[0].request, { ...request, protocol: VERSION });
 });
+
+test('a lost view of an earlier terminal reconnects to the same terminal', async t => {
+  const earlier = { ...resume, run: 'run-1' };
+  const { connection, sockets, frames, greet } = fixture(t, earlier);
+  const opened = connection.connect();
+  greet(sockets[0]);
+  sockets[0].receive({ type: 'session', session: 'one', status: 'exited' });
+  await opened;
+  sockets[0].close();
+  t.mock.timers.tick(500);
+  assert.equal(sockets.length, 2);
+  greet(sockets[1]);
+  assert.deepEqual(sockets[1].sent, [{ type: 'request', request: { ...earlier, protocol: VERSION } }]);
+  assert.equal(frames.length, 0);
+});

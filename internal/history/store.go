@@ -22,6 +22,7 @@ const (
 )
 
 var ErrNotFound = errors.New("session not found")
+var ErrRunNotFound = errors.New("terminal not found in this session")
 
 type Session struct {
 	Archived    bool         `json:"archived"`

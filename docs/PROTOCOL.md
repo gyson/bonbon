@@ -14,7 +14,7 @@ message. Terminal bytes use base64 in `data`. This preserves arbitrary bytes and
 codes.
 
 This is an early development protocol. The server greeting and first request verify
-version `bonbon/18`. The protocol needs no WebSocket subprotocol header. Session
+version `bonbon/19`. The protocol needs no WebSocket subprotocol header. Session
 operations and health checks reject unsupported versions. Shutdown uses the verified
 server's advertised version, so `server restart` can replace a server after a session
 protocol change. This requires the same greeting and shutdown envelope.
@@ -31,7 +31,7 @@ Open one connection per operation. The server immediately sends a greeting:
 {
   "type": "server",
   "server": {
-    "protocol": "bonbon/18",
+    "protocol": "bonbon/19",
     "instance": "random-instance-id",
     "pid": 12345,
     "dataDir": "/Users/example/.bonbon",
@@ -64,7 +64,7 @@ After the greeting, send a `request` message within five seconds:
 {
   "type": "request",
   "request": {
-    "protocol": "bonbon/18",
+    "protocol": "bonbon/19",
     "operation": "session-list",
     "limit": 10
   }
@@ -98,7 +98,8 @@ operations.
 | `session-config` | `session`, optional `preparation` plus `name` | `result`, session. Configuration saves require the current revision. |
 | `session-start` | `session`, preparation `revision`, terminal `size` | `session`, then terminal stream. Claims launch once. |
 | `worktree-remove` | `session` | `result`, containing `removed`. Preserves branch and history. |
-| `session-resume` | `session` ID and `size` | `session`, then a terminal stream or recorded history |
+| `session-resume` | `session` ID, `size`, and optional `run` (an earlier run of the session) | `session`, then a terminal stream or recorded history. With `run`, the recorded history of that run. |
+| `session-terminals` | `session` ID | `result`, containing the terminals of the session in start order. Each has `number`, `run`, `tool`, `status`, `started`, and `ended`. |
 | `session-handoff` | `session` ID | `result`, containing the handoff `folder`, `prompt`, and `available` (true when the folder has its README). Writes no files and starts no process. |
 | `session-continue` | `session`, `latestRun` (the latest run ID that the view saw), `tool` (a tool ID, or empty for Shell), terminal `size` | `session`, then a terminal stream. Writes the handoff folder and starts one new terminal. |
 
@@ -149,6 +150,9 @@ Protocol 18 adds `session-handoff` and `session-continue`. A session can now hav
 several runs, one after another. Each run has its own terminal. Ended views show the
 latest run. Tools in settings can have an optional `continueCommand`. The SQLite format
 does not change.
+
+Protocol 19 adds `session-terminals` and the optional `run` field of `session-resume`.
+A view can show an earlier terminal of a session. The SQLite format does not change.
 
 Database compatibility is separate from the WebSocket protocol version. Rebuild the
 executable. Start the new server. Reload the browser.
@@ -235,6 +239,13 @@ for each earlier terminal with output. `session-handoff` returns this folder and
 prompt that points to it, without side effects. Its `available` field is true when the
 folder has its `README.md`. Clients use it to show the prompt again after the new
 terminal started.
+
+`session-terminals` lists every run of a session as one terminal. `number` counts from 1
+in start order. `tool` comes from the start event of the run. Start events from BonBon
+0.0.4 and earlier have no tool, so the first run uses the tool of the preparation. A new
+terminal has no run record until its process starts. Until then, the list ends with a
+`starting` terminal that has an empty `run`. The operation starts no process and writes
+no files.
 
 A tool with a `continueCommand` gets the shell-quoted prompt in place of `{prompt}`. The
 server records and submits that line once. A tool without one submits its normal
@@ -327,10 +338,14 @@ shutdown, the server allows connections up to five seconds to receive completion
 it closes them.
 
 Ended sessions send one full frame of their latest run, wait for its acknowledgment,
-then send `history-end`. Normal completion stores a derived final view in a versioned
-`terminal-screen` SQLite event. Without that cache, the server emulates the original
-recording in bounded pages. Opening history never starts a process or sends recorded
-input. The browser retains the recorded dimensions and styles.
+then send `history-end`. A request with `run` gets the same reply for that run, also
+while a later run is live. Its `session` message has the `status` of that run. The view
+never joins the live process. Without `run`, or with the ID of the live run, the view
+joins the live process. A `run` of another session or an unknown run fails before any
+frame. Normal completion stores a derived final view in a versioned `terminal-screen`
+SQLite event. Without that cache, the server emulates the original recording in bounded
+pages. Opening history never starts a process or sends recorded input. The browser
+retains the recorded dimensions and styles.
 
 An input `id` is an opaque correlation value up to 80 bytes. A receipt without an error
 means the input was recorded and written to the PTY. It does not mean the application
@@ -406,13 +421,13 @@ const socket = new WebSocket(`ws://${location.host}/ws`);
 socket.onmessage = event => {
   const message = JSON.parse(event.data);
   if (message.type === "server") {
-    if (message.server.protocol !== "bonbon/18") {
+    if (message.server.protocol !== "bonbon/19") {
       socket.close();
       throw new Error("Unsupported BonBon protocol");
     }
     socket.send(JSON.stringify({
       type: "request",
-      request: { protocol: "bonbon/18", operation: "session-list", limit: 10 }
+      request: { protocol: "bonbon/19", operation: "session-list", limit: 10 }
     }));
   } else {
     console.log(message);

@@ -1,7 +1,9 @@
 package history
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +136,65 @@ func TestRunsListEachTerminalOfASessionInOrder(t *testing.T) {
 	}
 	if runs[1].Last != last || runs[1].First != last-1 || string(runs[1].Start) != `{"tool":"Fixture"}` || runs[2].First != 0 || len(runs[2].Start) != 0 {
 		t.Fatalf("%+v", runs)
+	}
+}
+
+// RunStarts lists only the runs of one session. Each run keeps its first start event.
+func TestRunStartsAndSessionRunStayInOneSession(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "history.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	session, err := store.CreateSession("Runs", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.CreateSession("Other", t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs, err := store.RunStarts(session.ID); err != nil || len(runs) != 0 {
+		t.Fatal(runs, err)
+	}
+	record := func(sid string, events ...string) Run {
+		t.Helper()
+		run, err := store.NewRun(sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, data := range events {
+			kind := "output"
+			if strings.HasPrefix(data, "{") {
+				kind = "start"
+			}
+			if _, err = store.Append(sid, run.ID, kind, []byte(data), ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return *run
+	}
+	first := record(session.ID, `{}`, "first output")
+	foreign := record(other.ID, `{"tool":"Other"}`)
+	second := record(session.ID, `{"tool":"Agent"}`, "second output", `{"tool":"Later"}`)
+	third := record(session.ID) // A run that never started has no events.
+	runs, err := store.RunStarts(session.ID)
+	if err != nil || len(runs) != 3 {
+		t.Fatal(runs, err)
+	}
+	for i, want := range []struct {
+		id, start string
+	}{{first.ID, `{}`}, {second.ID, `{"tool":"Agent"}`}, {third.ID, ""}} {
+		if runs[i].ID != want.id || runs[i].SessionID != session.ID || string(runs[i].Start) != want.start {
+			t.Fatalf("run %d: %+v", i, runs[i])
+		}
+	}
+	if run, err := store.SessionRun(session.ID, second.ID); err != nil || run.ID != second.ID {
+		t.Fatal(run, err)
+	}
+	for _, id := range []string{foreign.ID, "missing", ""} {
+		if _, err := store.SessionRun(session.ID, id); !errors.Is(err, ErrRunNotFound) {
+			t.Fatalf("run %q: %v", id, err)
+		}
 	}
 }

@@ -59,7 +59,7 @@ func TestProjectDraftsAreIndependentAndCommandsComeFromSettings(t *testing.T) {
 	}
 	// A client cannot replace the command or the owning project/workspace.
 	var request protocol.Request
-	if err = json.Unmarshal([]byte(`{"name":"Keep my draft","preparation":{"revision":1,"toolId":"agent","command":"echo injected","toolName":"Injected"},"run":{"workspace":"/other","projectId":"other"}}`), &request); err != nil {
+	if err = json.Unmarshal([]byte(`{"name":"Keep my draft","preparation":{"revision":1,"toolId":"agent","command":"echo injected","toolName":"Injected"},"workspace":"/other","project":"other"}`), &request); err != nil {
 		t.Fatal(err)
 	}
 	request.Session = id

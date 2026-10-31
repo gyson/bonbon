@@ -179,7 +179,7 @@ from that connection's greeting. Health checks read the greeting and close witho
 sending an operation.
 
 Session operations and health checks require the current protocol, with no version
-fallback. Shutdown uses the version verified above. The current version is `bonbon/18`.
+fallback. Shutdown uses the version verified above. The current version is `bonbon/19`.
 Each WebSocket message has a 16 MiB limit, including all fragments. Each message carries
 exactly one JSON object.
 
@@ -190,7 +190,9 @@ search, and pagination. SQLite format 6 adds a session archive flag.
 Settings, preparations, and worktree metadata remain server-owned. Formats 3–5 upgrade
 automatically to 6 at server startup. Reload the UI after starting the new server.
 Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in an ended
-session. SQLite format 6 does not change.
+session. Protocol 19 adds `session-terminals` and an optional `run` for
+`session-resume`, so a view can show an earlier terminal. SQLite format 6 does not
+change.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -554,6 +556,31 @@ heading. Its dialog shows the folder and the prompt, with **Copy prompt** and **
 message editor**. Put in message editor works only when the editor has no text, no
 files, and no pending send. It never merges with or replaces a draft, and it sends
 nothing. The user sends the prompt with Send when the agent is ready.
+
+### Earlier terminals
+
+When a session has more than one terminal, the terminal heading shows a selector. Its
+label names the shown terminal, for example `Terminal 2 of 3 · Codex · exited`. Click
+the label to see every terminal in start order. Each row has the number, tool, status,
+and start and end times. A live terminal has a green dot. ‹ and › step to the earlier
+or the later terminal. A session with one terminal shows no selector.
+
+An earlier terminal shows its saved final screen with its recorded dimensions, as an
+ended latest terminal does. The view is read-only, and the hint says that input and Send
+are off. **Back to live terminal** in the terminal footer opens the latest terminal
+again. When the latest terminal has ended, the button is **Back to latest terminal**.
+Reload and the session link also open the latest terminal.
+
+A view of an earlier terminal never joins the live process, so it never becomes the
+size owner. The process, its capture, and the other views continue. The status badge,
+**Stop session**, and **Continue in new terminal** still apply to the whole session.
+
+The UI reads the list with `session-terminals` when it opens a session, when a terminal
+starts or exits, and when the selector opens. The tool name comes from the start event
+of each run. Start events from BonBon 0.0.4 and earlier have no tool, so the first run
+uses the tool of the preparation. A new terminal has no run record until its process
+starts. Until then, the list ends with a `starting` terminal without a run ID. The UI
+reads the list again every five seconds until that terminal has a run.
 
 ### Message editor
 
@@ -1026,6 +1053,23 @@ prompt** showed the same prompt. Put in message editor filled the empty editor a
 the draft. A second attempt with text in the editor was refused and left the text
 unchanged. No browser errors were reported.
 
+Earlier-terminal fixtures cover the terminal list with tools from start events and from
+the preparation, a `starting` terminal without a run record, and the change to its run.
+They cover a resume of an earlier run while a later run is live. That view gets the
+saved screen of its own run and `history-end`, and the live run gets no new view. A run
+of another session is rejected before any frame. Browser fixtures cover the selected
+run, steps at both ends, labels, local times, and a reconnect that keeps an earlier run.
+
+A browser check with a temporary instance and `/bin/sh` made three Shell terminals in
+one session. The selector was hidden for one terminal. The list showed three terminals
+in start order. Terminal 1 and terminal 2 showed their own output with input and Send
+off. The sidebar did not count those views of the live session. **Back to live
+terminal** joined the third terminal, and Send then reached it. After a server restart,
+the button was **Back to latest terminal**, and Escape closed the list. **Continue in
+new terminal** then started a fourth terminal. **Stop session** from a view of an
+earlier terminal stopped it and changed the button to **Back to latest terminal**. No
+browser errors were reported. No real agent CLI was used.
+
 `codex sandbox` from Codex CLI 0.160.0, with default settings, read the handoff
 `README.md` from outside its working directory. In the same sandbox, `bonbon query`
 failed with "connect: operation not permitted". These checks ran no model.
@@ -1066,13 +1110,14 @@ and prevent cleanup. Provider-owned daemons retain their lifecycle.
 BonBon stops the launched group and a shell's foreground job. It does not track other
 background groups. Linux runtime behavior and large archives are unverified.
 
-A session has at most one live terminal. The UI shows only the latest terminal of a
-session. Earlier terminals are available only in the handoff folder and through `bonbon
-query`. A handoff transcript has at most the newest 10,000 scrollback rows of a
-terminal. The server rebuilds the handoff folder while it holds the launch lock. A large
-interrupted recording can delay other launches during this rebuild. A transcript keeps
-only the last screen of a program that uses the alternate screen, such as Codex CLI
-0.160.0 without `--no-alt-screen`. The session header shows the tool of the original
+A session has at most one live terminal. The UI shows an earlier terminal only as its
+saved final screen, one terminal at a time. It cannot show two terminals side by side.
+The terminal list reads every start event of the session, so a long session makes the
+list slower to load. A handoff transcript has at most the newest 10,000 scrollback rows
+of a terminal. The server rebuilds the handoff folder while it holds the launch lock. A
+large interrupted recording can delay other launches during this rebuild. A transcript
+keeps only the last screen of a program that uses the alternate screen, such as Codex
+CLI 0.160.0 without `--no-alt-screen`. The session header shows the tool of the original
 launch, also after a continue with another tool. The prompt gives the new agent a record
 of earlier work. It does not restore the internal state of the earlier agent.
 

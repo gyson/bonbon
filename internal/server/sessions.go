@@ -30,6 +30,7 @@ type runningSession struct {
 	terminal  *terminal.State
 	revision  int64
 	runID     string
+	tool      string // The tool of the run. It does not change.
 	ended     bool
 	exit      protocol.Message
 }
@@ -169,7 +170,7 @@ func (r *runningSession) finish(code int, err error) {
 func (s *Server) sessionAttachment(ctx context.Context, conn *protocol.Conn, session history.Session, run *agent.Launch) func() {
 	s.mu.Lock()
 	runContext, cancel := context.WithCancel(ctx)
-	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1}
+	r := &runningSession{id: session.ID, controls: make(chan agent.Control, 16), cancel: cancel, done: make(chan struct{}), terminal: terminal.New(run.Size), revision: 1, tool: run.Tool}
 	s.sessions[session.ID] = r
 	s.mu.Unlock()
 	launch := func() {
@@ -222,18 +223,29 @@ func prepareRun(request *protocol.Run) (*agent.Launch, error) {
 	return &run, nil
 }
 
+// run returns the ID of the run, or an empty string before its process starts.
+func (r *runningSession) run() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.runID
+}
+
 func (s *Server) running(id string) *runningSession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sessions[id]
 }
 
-func (s *Server) resumeSession(conn *protocol.Conn, id string, size protocol.Size) {
+// resumeSession shows the latest terminal of a session, or the earlier terminal of
+// runID. A view joins a live terminal. Other terminals show their saved final screen. A
+// view of an earlier terminal never attaches to the live process, and the process
+// continues.
+func (s *Server) resumeSession(conn *protocol.Conn, id, runID string, size protocol.Size) {
 	if !terminal.ValidSize(size) {
 		s.reply(conn, nil, errors.New("terminal size must be 2–512 columns and 1–256 rows"))
 		return
 	}
-	if r := s.running(id); r != nil {
+	if r := s.running(id); r != nil && (runID == "" || runID == r.run()) {
 		s.attach(conn, r, size, nil)
 		return
 	}
@@ -242,14 +254,22 @@ func (s *Server) resumeSession(conn *protocol.Conn, id string, size protocol.Siz
 		s.reply(conn, nil, err)
 		return
 	}
-	status, runID := "ended", ""
-	if session.Run != nil {
-		status, runID = session.Run.Status, session.Run.ID
+	run := session.Run
+	if runID != "" {
+		earlier, err := s.store.SessionRun(id, runID)
+		if err != nil {
+			s.reply(conn, nil, err)
+			return
+		}
+		run = &earlier
+	}
+	status := "ended"
+	if run != nil {
+		status, runID = run.Status, run.ID
 	}
 	if err = conn.Send(protocol.Message{Type: "session", Session: id, Status: status}); err != nil {
 		return
 	}
-	// Show the latest terminal. Earlier terminals stay in history.
 	view, err := s.loadScreen(id, runID)
 	if err != nil {
 		s.reply(conn, nil, err)
