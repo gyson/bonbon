@@ -25,7 +25,7 @@
     <header class="toolbar">
       <div class="toolbar-title"><button id="sidebar-toggle" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" aria-keyshortcuts="Meta+B" title="Hide sidebar (⌘B)"><svg viewBox="0 0 20 20" aria-hidden="true"><path class="sidebar-panel" d="M5.25 3.75h2.5v12.5h-2.5a2.5 2.5 0 0 1-2.5-2.5v-7.5a2.5 2.5 0 0 1 2.5-2.5z"/><rect x="2.75" y="3.75" width="14.5" height="12.5" rx="2.5"/><path d="M7.75 3.75v12.5"/></svg></button>
         <div class="session-heading"><h1 id="session-title">Your workspace</h1><p id="workspace">A home for your terminal sessions.</p><p id="launch-summary" hidden></p></div></div>
-      <div class="actions"><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="continue-session" hidden title="Start a new terminal in this session. The new agent can read the earlier terminals.">Continue in new terminal</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
+      <div class="actions"><button id="history-open" disabled title="Search recorded output (⌘⇧F or Ctrl+Shift+F)">Search history</button><span id="status" class="badge" hidden></span><button id="rename-session" hidden>Rename</button><button id="archive-session" hidden>Archive</button><button id="reconnect" hidden>Reconnect</button><button id="continue-session" hidden title="Start a new terminal in this session. The new agent can read the earlier terminals.">Continue in new terminal</button><button id="remove-worktree" hidden>Remove worktree</button><button id="stop" class="danger" disabled>Stop session</button></div>
     </header>
     <div id="notice" role="status" hidden></div>
     <section id="welcome" class="welcome">
@@ -136,6 +136,25 @@
     <button id="sent-more" hidden>Show older messages</button>
     <ol id="sent-list" class="sent-list"></ol>
     <p id="sent-status" role="status"></p>
+  </dialog>
+  <dialog id="history-dialog" class="history-dialog" aria-labelledby="history-title" aria-describedby="history-help">
+    <div class="dialog-heading"><div><span class="eyebrow">RECORDED OUTPUT</span><h2 id="history-title">Search history</h2></div><button id="history-close" class="text-button" aria-label="Close history search">✕</button></div>
+    <form id="history-form" class="history-form"><label class="sr-only" for="history-query">Search recorded output</label><input id="history-query" type="search" maxlength="512" placeholder="Search recorded output…" autocomplete="off"><button class="primary" type="submit">Search</button></form>
+    <div class="history-filters"><label for="history-scope">Search in <select id="history-scope"><option value="session">This session</option><option value="project">This project</option><option value="all">All sessions</option></select></label><label class="checkbox"><input id="history-case" type="checkbox">Match case</label></div>
+    <div class="history-summary"><span id="history-status" role="status"></span><span id="history-scope-label"></span></div>
+    <div class="history-body">
+      <div class="history-result-column"><ol id="history-results" aria-label="History search results"></ol><button id="history-more" hidden>Show more results</button></div>
+      <p id="history-context-empty" class="history-empty">Select a result to read its context.</p>
+      <section id="history-context" class="history-context" aria-label="Selected result context" hidden>
+        <h3 id="history-context-title"></h3><p id="history-context-meta"></p>
+        <button id="history-before" disabled>↑ Show more before</button>
+        <pre id="history-context-text"></pre>
+        <button id="history-after" disabled>↓ Show more after</button>
+        <div class="history-context-actions"><button id="history-copy" disabled>Copy context</button><span><button id="history-previous" disabled>Previous</button><button id="history-next" disabled>Next</button></span></div>
+        <p id="history-context-status" class="form-help" role="status"></p><details class="history-source"><summary>Source reference</summary><p id="history-source"></p></details>
+      </section>
+    </div>
+    <p id="history-help" class="history-help">Derived terminal output · Read only. Redraws can repeat text or omit spaces.</p>
   </dialog>
   <noscript>Enable JavaScript to use BonBon’s web UI.</noscript>
 </body>

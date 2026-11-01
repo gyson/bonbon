@@ -156,9 +156,9 @@ bonbon --dir ~/bonbon-experiment server start
 ```
 
 The command starts a detached background process from the BonBon executable that
-received it. It waits for the server to accept requests. Then it prints the web UI URL,
-process ID (PID), history directory, and log path. Closing the launching terminal leaves
-the server running.
+received it. It waits up to two minutes for the server to accept requests, including
+automatic database upgrades. Then it prints the web UI URL, process ID (PID), history
+directory, and log path. Closing the launching terminal leaves the server running.
 
 A repeated start reports the existing matching server and its URL without replacing it.
 Open that URL in a browser to use the web UI. The command does not launch a browser. See
@@ -312,9 +312,10 @@ The tables are:
 | `worktrees` | `session_id`, `path`, `repository`, `base`, `commit_id`, `branch`, `state` |
 | `events` | `seq`, `session_id`, `run_id`, `kind`, `data`, `text`, `created` |
 
-The schema uses format 6. Server startup upgrades formats 3–5 automatically. Format 6
-needs no migration. Formats 1 and 2, nonempty unversioned databases, and newer formats
-are rejected without changing their contents. Downgrades are not supported.
+The schema uses format 7. Server startup upgrades formats 3–6 automatically. Format 7
+needs no migration. The upgrade adds indexes for run events, nonempty output, and start
+events. Formats 1 and 2, nonempty unversioned databases, and newer formats are rejected
+without changing their contents. Downgrades are not supported.
 
 No separate migration command or SQLite CLI is needed. Manage projects in the UI. There
 are no project CLI commands. Removing a custom project clears session membership but

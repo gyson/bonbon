@@ -186,3 +186,50 @@ label.checkbox { display: flex; align-items: center; gap: 10px; }
 .composer-heading-actions { display: flex; gap: 8px; }
 #handoff-status { margin: 10px 0; min-height: 1.7em; }
 .form-warning { color: #87591c; background: #fbf0d9; border-radius: 7px; padding: 10px 12px; font-size: 12px; line-height: 1.6; }
+
+.history-dialog { width: 940px; padding: 0; }
+.history-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 40px); }
+.history-dialog .dialog-heading { padding: 22px 24px 16px; margin: 0; }
+.history-dialog h2 { margin-top: 5px; }
+.history-form { display: flex; gap: 10px; padding: 0 24px; }
+.history-form input { min-width: 0; margin: 0; background: #fafbf8; }
+.history-form button { flex: none; }
+.history-filters { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 24px 18px; font-size: 12px; color: #65736a; }
+.history-filters label { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.history-filters select { width: auto; padding: 6px 10px; }
+.history-filters input { margin: 0; }
+.history-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-block: 1px solid #dce3da; padding: 11px 24px; background: #fafaf8; font-size: 11px; color: #65736a; }
+#history-status { color: #232a30; }
+#history-status.form-error { color: #a34238; }
+.history-body { display: grid; grid-template-columns: minmax(240px, .9fr) minmax(0, 1.3fr); min-height: 250px; height: 410px; }
+.history-result-column { display: flex; flex-direction: column; min-height: 0; padding: 8px; border-right: 1px solid #dce3da; }
+#history-results { flex: 1; min-height: 0; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.history-result { display: block; width: 100%; border: 1px solid transparent; padding: 13px 12px; margin: 3px 0; text-align: left; white-space: normal; }
+.history-result[aria-current="true"] { border-color: #dce3da; background: #eaf2eb; }
+.history-result-meta { display: block; font-size: 10px; color: #65736a; line-height: 1.6; }
+.history-result strong { display: block; margin: 5px 0 7px; font-size: 12px; font-weight: 550; }
+.history-snippet { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-family: Menlo, Monaco, monospace; font-size: 11px; line-height: 1.7; white-space: normal; overflow-wrap: anywhere; }
+.history-dialog mark { background: #f5e2a0; color: #443b1c; padding: 0 2px; border-radius: 2px; }
+#history-more { align-self: center; font-size: 11px; margin: 9px 0 4px; }
+.history-context { padding: 20px; min-width: 0; overflow-y: auto; }
+.history-context h3 { font-size: 13px; font-weight: 550; margin: 0 0 4px; overflow-wrap: anywhere; }
+#history-context-meta { font-size: 11px; color: #65736a; margin: 0 0 16px; overflow-wrap: anywhere; }
+#history-context-text { padding: 13px; margin: 13px 0; border: 1px solid #dce3da; border-radius: 7px; background: #fafaf8; font-family: Menlo, Monaco, monospace; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-context button { font-size: 11px; padding: 5px 8px; }
+.history-context-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+.history-context-actions > span { display: flex; gap: 6px; }
+#history-context-status:empty { display: none; }
+.history-source { margin-top: 14px; font-size: 10px; color: #65736a; overflow-wrap: anywhere; }
+.history-source p { line-height: 1.7; }
+.history-empty { padding: 22px; font-size: 12px; color: #65736a; }
+.history-help { flex: none; border-top: 1px solid #dce3da; margin: 0; padding: 12px 24px; font-size: 11px; color: #65736a; line-height: 1.6; }
+@media (max-width: 620px) {
+  .history-dialog .dialog-heading { padding: 16px; }
+  .history-form { padding: 0 16px; }
+  .history-filters { padding: 12px 16px; flex-wrap: wrap; }
+  .history-summary { padding: 10px 16px; }
+  .history-body { display: flex; flex-direction: column; height: auto; min-height: 0; overflow-y: auto; }
+  .history-result-column { flex: none; max-height: 210px; border-right: 0; border-bottom: 1px solid #dce3da; }
+  .history-context { flex: none; overflow: visible; padding: 16px; }
+  .history-help { padding: 12px 16px; }
+}

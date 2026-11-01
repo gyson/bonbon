@@ -11,7 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const Version = "bonbon/19"
+const Version = "bonbon/20"
 const Path = "/ws"
 const maxMessage = 16 << 20
 
@@ -58,6 +58,9 @@ type Request struct {
 	Size        Size               `json:"size,omitempty"`
 	Draft       *Draft             `json:"draft,omitempty"`
 	Upload      *Upload            `json:"upload,omitempty"`
+
+	Search  *history.SearchFilter   `json:"search,omitempty"`
+	Context *history.ContextRequest `json:"context,omitempty"`
 }
 
 // Drafts contain editable text and attachments. They are not agent messages. Pending

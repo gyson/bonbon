@@ -174,7 +174,8 @@ func TestMigrationFailureRollsBackEntireUpgrade(t *testing.T) {
 		name, damage, message string
 	}{
 		{"later-script", "CREATE TABLE worktrees (original TEXT); INSERT INTO worktrees VALUES('keep')", "apply history migration 5"},
-		{"latest-script", "ALTER TABLE sessions ADD COLUMN archived INTEGER", "apply history migration 6"},
+		{"archive-script", "ALTER TABLE sessions ADD COLUMN archived INTEGER", "apply history migration 6"},
+		{"run-index-script", "CREATE TABLE events_start_run (original TEXT); INSERT INTO events_start_run VALUES('keep')", "apply history migration 7"},
 		{"schema-validation", "ALTER TABLE events RENAME COLUMN data TO evidence", "validate history schema"},
 		{"foreign-keys", "PRAGMA foreign_keys=OFF; UPDATE runs SET session_id='missing' WHERE id='finished'", "invalid foreign keys"},
 	} {
@@ -229,7 +230,13 @@ func TestUnsupportedDatabasesRemainUnchanged(t *testing.T) {
 }
 
 func TestConcurrentUpgrade(t *testing.T) {
-	path, db := oldDatabase(t, 3)
+	for _, version := range []int{3, 6} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) { concurrentUpgrade(t, version) })
+	}
+}
+
+func concurrentUpgrade(t *testing.T, version int) {
+	path, db := oldDatabase(t, version)
 	before := snapshotDatabase(t, db)
 	db.Close()
 	start := make(chan struct{})
@@ -255,4 +262,37 @@ func TestConcurrentUpgrade(t *testing.T) {
 	if got := sqlRows(t, db, "PRAGMA user_version"); got[0][0] != int64(schemaVersion) {
 		t.Fatal("upgrade was not committed", got)
 	}
+}
+
+func TestFormat6IndexUpgradeRollsBackAllIndexes(t *testing.T) {
+	path, db := oldDatabase(t, 6)
+	execSQL(t, db, "CREATE TABLE events_start_run (evidence TEXT); INSERT INTO events_start_run VALUES('keep')")
+	before := snapshotDatabase(t, db)
+	db.Close()
+	if store, err := Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted conflicting index name")
+	}
+	db = rawDatabase(t, path)
+	assertSnapshot(t, db, before, true)
+	if got := sqlRows(t, db, "SELECT name FROM sqlite_schema WHERE type='index' AND name IN ('events_run','events_output_run')"); len(got) != 0 {
+		t.Fatal("partial index migration survived", got)
+	}
+}
+
+func TestCurrentFormatRequiresRunIndexesWithoutChangingData(t *testing.T) {
+	path, db := oldDatabase(t, 6)
+	db.Close()
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execSQL(t, store.db, "DROP INDEX events_output_run")
+	before := snapshotDatabase(t, store.db)
+	store.Close()
+	if store, err = Open(path); err == nil {
+		store.Close()
+		t.Fatal("accepted incomplete format 7 schema")
+	}
+	assertSnapshot(t, rawDatabase(t, path), before, true)
 }

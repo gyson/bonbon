@@ -128,6 +128,9 @@ func checkSchema(ctx context.Context, conn *sql.Conn) error {
 		"SELECT revision,data FROM settings LIMIT 0",
 		"SELECT session_id,revision,state,data FROM preparations LIMIT 0",
 		"SELECT session_id,path,repository,base,commit_id,branch,state FROM worktrees LIMIT 0",
+		"SELECT seq FROM events INDEXED BY events_run WHERE run_id='' LIMIT 0",
+		"SELECT seq FROM events INDEXED BY events_output_run WHERE run_id='' AND kind='output' AND text<>'' LIMIT 0",
+		"SELECT seq FROM events INDEXED BY events_start_run WHERE run_id='' AND kind='start' LIMIT 0",
 	} {
 		rows, err := conn.QueryContext(ctx, query)
 		if err != nil {

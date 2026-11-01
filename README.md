@@ -138,14 +138,13 @@ You can also open the URL printed by `server start` yourself. Running `server st
 again prints the existing server's URL without opening a browser or replacing the
 server. After a build, use `server restart` to serve the new embedded assets. Restart
 stops active sessions. Ports can change after restart, so use the newly printed URL.
-This version uses protocol `bonbon/19`.
+This version uses protocol `bonbon/20`.
 
 `server restart` can replace a server using a different session protocol when it
 supports the same verified shutdown request. UI and query commands still require the
-current protocol. SQLite uses format 6 for settings, preparations, managed worktrees,
-and session archive flags. The new server automatically upgrades formats 3–5 at startup.
-You do not need a fresh `--dir`. See [database upgrades](#database-upgrades) for
-details.
+current protocol. SQLite format 7 adds run indexes to the existing history and settings.
+The new server automatically upgrades formats 3–6 at startup. You do not need a fresh
+`--dir`. See [database upgrades](#database-upgrades) for details.
 
 The sidebar groups sessions and drafts under saved projects, with 100 items per page,
 newest terminal activity first. Search matches session names, IDs, folders, and project
@@ -156,6 +155,32 @@ names, and draft saves do not affect the order.
 Use **Add project** to save an existing folder, with an optional name that defaults to
 its basename. Git is optional. Click **＋** beside a project to create and select a new
 draft in the sidebar.
+
+Use **Search history** to search recorded output in SQLite. Command+Shift+F on macOS
+or Ctrl+Shift+F opens the same dialog. The default scope includes every terminal of the
+selected session. Choose **This project** or **All sessions** for a broader search.
+Archived sessions are included. Without a selected session, the dialog starts with
+**All sessions** and waits for search text.
+
+Results appear from oldest to newest. Select a result to read its surrounding context
+in the right pane. **Show more before** and **Show more after** expand that context.
+**Copy context** copies the displayed text. Search leaves the active terminal running.
+Submit the search again to include new output.
+
+**Show more results** loads the next page when additional matches exist. The status says
+**results loaded** while more matches remain. Otherwise, it reports the final match count
+and hides that button.
+
+Search uses literal text and ignores case unless **Match case** is selected. It finds
+phrases across recording chunks within one terminal. Derived output can contain repeated
+text or missing spaces after terminal redraws. It is not an exact conversation transcript.
+
+When a scan reaches its limit, **Continue search** keeps the results and scans newer
+output. If no progress is possible before the time limit, the dialog asks for a smaller
+scope. **Retry search** keeps the attempted cursor and recording cutoff. Context loads
+separately, so a context error leaves results available. Display and copied context
+preserve intentional blank lines. See [SPEC.md](docs/SPEC.md#history-search) for
+resource limits and large-archive limitations.
 
 Each project can have several drafts. Click a draft entry to reopen it. Starting keeps
 the same session entry and ID. Project names are plain text. Use the small arrow to
@@ -287,8 +312,8 @@ content and exited alternate screens may only remain in the original archive.
 
 Terminal sizes are bounded to 2–512 columns and 1–256 rows. Advanced graphics,
 hyperlinks and extended keyboard protocols are not forwarded to the view. Use
-`bonbon query` to inspect the recording beyond the restored terminal view. There is no
-separate history panel, file browser, or diff view.
+**Search history** or `bonbon query` to inspect recorded output beyond the restored
+terminal view. There is no file browser or diff view.
 
 The message editor stays below the terminal. Drag the small divider between them to
 adjust their heights. You can also focus the divider and use Up/Down arrows or Home/End.
@@ -425,17 +450,19 @@ started.
 
 ## Database upgrades
 
-The current SQLite format is 6. Formats 3 (from v0.0.1), 4, and 5 upgrade automatically
-to 6 on server start or restart. Format 6 databases need no schema migration. Upgrades
-preserve sessions, runs, original events, drafts, attachments, project membership,
-settings, and worktree metadata. Format 3 sessions remain standalone and keep their
-recorded workspace paths.
+The current SQLite format is 7. Formats 3 (from v0.0.1), 4, 5, and 6 upgrade
+automatically to 7 on server start or restart. Format 7 databases need no schema
+migration. Upgrades preserve sessions, runs, original events, drafts, attachments,
+project membership, settings, and worktree metadata. Format 3 sessions remain standalone
+and keep their recorded workspace paths.
 
 Every binary includes the ordered SQL scripts under `internal/history/migrations/`
 through Go embedding. No SQLite CLI, downloaded scripts, or extra files are needed. All
 pending steps and their version changes commit in one transaction. A failed migration
 rolls back the upgrade and stops startup. Inspect `server.log` for the failed step.
-Reopening an upgraded database does not repeat completed migrations.
+Reopening an upgraded database does not repeat completed migrations. Format 7 builds
+indexes for run events, nonempty output, and start events. Startup waits up to two
+minutes for readiness, including large index upgrades.
 
 Formats 1 and 2, nonempty unversioned databases, and formats newer than this executable
 are rejected without changing their contents. Use a newer executable for a newer format.
@@ -443,7 +470,7 @@ Downgrades are not implemented. These migrations do not provide backups. Cloud b
 remains planned separately.
 
 For contributors: keep released migration files unchanged. For each schema or durable
-data format change, add the next numbered SQL file (for example, `007.sql`). Increase
+data format change, add the next numbered SQL file (for example, `008.sql`). Increase
 `schemaVersion`. This also applies to stored JSON changes. Scripts must stay inside the
 migration runner's transaction.
 

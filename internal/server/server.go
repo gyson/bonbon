@@ -208,6 +208,18 @@ func (s *Server) handle(ctx context.Context, conn *protocol.Conn) {
 	case "query":
 		result, err := s.store.Query(ctx, request.SQL)
 		s.reply(conn, result, err)
+	case "history-search":
+		if request.Search == nil {
+			s.reply(conn, nil, errors.New("missing history search"))
+			return
+		}
+		s.historyRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.Search(ctx, *request.Search) })
+	case "history-context":
+		if request.Context == nil {
+			s.reply(conn, nil, errors.New("missing history context"))
+			return
+		}
+		s.historyRead(ctx, conn, func(ctx context.Context) (any, error) { return s.store.SearchContext(ctx, *request.Context) })
 	case "composer-draft":
 		result, err := s.composer(request.Session, request.Draft)
 		s.reply(conn, result, err)
@@ -235,4 +247,23 @@ func (s *Server) reply(conn *protocol.Conn, result any, err error) {
 		return
 	}
 	conn.Send(protocol.Message{Type: "result", Result: data})
+}
+
+// A history connection carries one request. Disconnecting cancels its SQLite work.
+func (s *Server) historyRead(ctx context.Context, conn *protocol.Conn, read func(context.Context) (any, error)) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stopClose()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn.Receive()
+		cancel()
+	}()
+	defer func() { conn.Close(); <-done }()
+	result, err := read(ctx)
+	if ctx.Err() == nil {
+		s.reply(conn, result, err)
+	}
 }

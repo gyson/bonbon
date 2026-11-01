@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -47,15 +45,11 @@ func (s *Store) Query(ctx context.Context, query string) (result QueryResult, er
 			err = fmt.Errorf("read-only query: %w", err)
 		}
 	}()
-	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(s.Path)}
-	uri.RawQuery = url.Values{"mode": {"ro"}, "_pragma": {"query_only(1)", "trusted_schema(0)", "busy_timeout(1000)"}}.Encode()
-	conn, err := sqlite3.OpenContext(ctx, uri.String())
+	conn, err := s.readConnection(ctx)
 	if err != nil {
 		return result, err
 	}
 	defer conn.Close()
-	conn.SetInterrupt(ctx)
-	conn.Limit(sqlite3.LIMIT_LENGTH, 1<<20)
 	conn.Limit(sqlite3.LIMIT_COLUMN, 128)
 	conn.Limit(sqlite3.LIMIT_SQL_LENGTH, querySQLBytes)
 	conn.HardHeapLimit(64 << 20)
