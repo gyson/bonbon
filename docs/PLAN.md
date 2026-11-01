@@ -19,8 +19,8 @@ services. Do not add a separate browser session store or database writer.
   Keep original events authoritative and verify checkpoint/reconstruction boundaries.
 - Extend terminal compatibility checks for graphics, extended keyboard protocols and
   soft-wrap copy semantics. Test the actual agent CLI versions before claiming support.
-- Profile history search with large archives. Add an index if bounded scans do not meet
-  daily search needs. Preserve original events and source references.
+- Profile broader searches on daily-use archives. Evaluate full-text indexing if bounded
+  scans do not meet search needs. Preserve original events and source references.
 - Add read-only code diff and file views for the selected workspace. File access belongs
   in the core, scoped to that workspace.
 - Add verified agent-specific attachment delivery where plain file references are

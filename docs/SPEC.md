@@ -48,9 +48,9 @@ See [GOAL.md](GOAL.md) for continuation, imports, and richer workspace goals.
 The SQLite driver exposes query authorization and cancellation through supported APIs.
 This keeps read-only query enforcement in SQLite and avoids a custom SQL parser.
 
-Storage uses format version 6 with projects, sessions, runs, events, settings,
-preparations, worktree metadata, and session archive flags. Embedded SQL migrations
-upgrade formats 3–5 automatically at server startup. Format 6 needs no migration. Each
+Storage uses format version 7 with projects, sessions, runs, events, settings,
+preparations, worktree metadata, archive flags, and run indexes. Embedded SQL migrations
+upgrade formats 3–6 automatically at server startup. Format 7 needs no migration. Each
 tool in the settings JSON can have an optional continue command. Saved settings without
 this field read as tools without a continue command, so the field needs no migration.
 Commands and APIs may still change during early development. Database upgrades preserve
@@ -141,10 +141,11 @@ synthetic binaries and GitHub API responses. They do not access real credentials
 ## Server lifecycle
 
 `start` uses the invoked executable to launch a new detached process, with standard
-input disconnected and output appended to `server.log`. It waits for a successful
-protocol handshake. A second start leaves the matching server unchanged. `stop` requests
-shutdown through the protocol and waits for the archive lock to be released. `restart`
-completes stop before launching the invoked executable again.
+input disconnected and output appended to `server.log`. It waits up to two minutes for a
+successful protocol handshake, including database upgrades. A second start leaves the
+matching server unchanged. `stop` requests shutdown through the protocol and waits for
+the archive lock to be released. `restart` completes stop before launching the invoked
+executable again.
 
 Shutdown uses the verified server's advertised protocol version, so rebuilding with a
 new session protocol does not block stop or restart. It requires the same greeting and
@@ -187,15 +188,16 @@ The server rejects binary messages and invalid JSON. There is no extra length pr
 Protocol 15 creates independent project drafts and adds archive/restore, collection
 search, and pagination. SQLite format 6 adds a session archive flag.
 
-Settings, preparations, and worktree metadata remain server-owned. Formats 3–5 upgrade
-automatically to 6 at server startup. Reload the UI after starting the new server.
+Settings, preparations, and worktree metadata remain server-owned. Formats 3–6 upgrade
+automatically to 7 at server startup. Reload the UI after starting the new server.
 Protocol 18 adds `session-continue` and `session-handoff` for a new terminal in an ended
 session. Protocol 19 adds `session-terminals` and an optional `run` for
 `session-resume`, so a view can show an earlier terminal. SQLite format 6 does not
 change.
 
 Protocol 20 adds `history-search` and `history-context`. These operations read existing
-recordings without schema changes. SQLite format 6 remains current.
+recordings. SQLite format 7 adds run indexes through migration 7 without changing
+records.
 
 HTTP serves `GET /ws` for the WebSocket upgrade, `/` for the embedded UI, `/assets/` for
 its static files, and `GET /client-config` for browser connection information. All
@@ -493,8 +495,8 @@ view.
 
 **Search history** opens a modal dialog with a result list and a context pane.
 Command+Shift+F on macOS and Ctrl+Shift+F open the same dialog. Ctrl+F remains available
-to terminal programs. The dialog does not send input, resize the PTY, or change sessions.
-Closing it leaves recording and the active session connection running.
+to terminal programs. The dialog does not send input, resize the PTY, or change
+sessions. Closing it leaves recording and the active session connection running.
 
 The selected session is the default scope. This scope includes all its earlier
 terminals. **This project** uses current project membership. **All sessions** includes
@@ -507,15 +509,16 @@ normalize Unicode. Wildcards, SQL syntax, and markup have no special meaning.
 
 The history service uses parameterized SQLite reads on a separate read-only connection.
 It streams existing `output` event text through bounded matching state for each run.
-Matches can cross any number of event boundaries. They never cross terminals or sessions.
-Original events remain unchanged. There is no persistent search index or schema change.
+Matches can cross any number of event boundaries. They never cross terminals or
+sessions. Original events remain unchanged. Format 7 supplies event indexes for
+run-scoped reads. There is no full-text search index.
 
 Results follow recording order, from oldest to newest. A match uses the event that
 completes its text. Each result identifies its session, terminal number, recorded tool,
-and time. Search and the terminal selector use the same tool-name fallback.
-For an older first terminal without a recorded tool, they use the saved preparation.
-Other missing names appear as **Tool not recorded**. The initial page has at most 20 results.
-**Show more results** appends the next page below them.
+and time. Search and the terminal selector use the same tool-name fallback. For an older
+first terminal without a recorded tool, they use the saved preparation. Other missing
+names appear as **Tool not recorded**. The initial page has at most 20 results. **Show
+more results** appends the next page below them.
 
 The status says **results loaded** while more matches remain. Otherwise, it reports the
 final count and hides that button.
@@ -532,10 +535,12 @@ advances the cursor, including ranges with only empty or out-of-scope events.
 A bounded scan returns its results, an `incomplete` flag, and a cursor for the next
 character when progress permits continuation. The status shows **Search incomplete**,
 and **Continue search** reads forward from that cursor. If the deadline permits no
-progress, search hides continuation and asks for a smaller scope or another attempt.
-It preserves the incomplete state and any results. An empty partial page remains
-incomplete. A later page restores bounded lookbehind per terminal, so split phrases and overlapping matches survive the boundary.
-Completed scans report the final count. Caller cancellation stops the request.
+progress, search replaces continuation with **Retry search**. Retry keeps the attempted
+cursor and fixed recording cutoff. A changed query or scope starts a new search. It
+preserves the incomplete state and any results. An empty partial page remains
+incomplete. A later page restores bounded lookbehind per terminal, so split phrases and
+overlapping matches survive the boundary. Completed scans report the final count. Caller
+cancellation stops the request.
 
 The service bounds matcher storage to 262,144 source positions. Evicted state is rebuilt
 from recorded lookbehind. Requests allow at most 50 results. There is no result-offset
@@ -545,16 +550,17 @@ Each result includes a snippet with the complete match, up to 120 preceding char
 and up to 180 following characters across output events of the same terminal.
 Following-text and display reads share a separate one-second budget per page. A failed
 snippet read preserves the available text. Selecting a result loads its full initial
-context separately. A context error preserves the snippet and results.
-**Show more before** and **Show more after** add 512 characters on their respective side.
-Each side stops at 8,192 characters with an explicit limit label. Context reads skip
-empty text and stay within the selected run's output bounds and recording cutoff.
-They have a five-second timeout. Source references retain session, run, sequence, and
-character offsets.
+context separately. A context error preserves the snippet and results. **Show more
+before** and **Show more after** add 512 characters on their respective side. Each side
+stops at 8,192 characters with an explicit limit label. Context reads skip empty text
+and stay within the selected run's output bounds and recording cutoff. They have a
+five-second timeout. Source references retain session, run, sequence, and character
+offsets.
 
-Each read caches terminal metadata and first/last output sequences after one event scan
-per session. Context and lookbehind queries use those bounds. Matching results do not
-trigger repeated session scans or full context reads.
+Each read caches metadata only for the runs it uses. First and last nonempty output and
+the first start event use direct indexed lookups. Context and lookbehind queries use
+those bounds. Search does not aggregate all events of a session. Terminal lists and
+handoff run bounds use the same run indexes.
 
 Changing the query or scope, closing the dialog, or selecting another result cancels
 obsolete requests. The client closes their WebSockets. The server cancels their SQLite
@@ -562,19 +568,21 @@ work on disconnect and stops its disconnect reader after a reply.
 
 The result list and context pane render text nodes with a highlighted match. They never
 execute terminal escapes or interpret HTML or Markdown. **Copy context** copies only the
-displayed text. Late replies cannot replace a newer search or a different selected result.
-On narrow screens, the result list appears above the context pane.
+displayed text. Late replies cannot replace a newer search or a different selected
+result. On narrow screens, the result list appears above the context pane.
 
-Display text removes the second line break only for verified original CRLF pairs.
-It also recognizes pairs split across output events. Literal blank lines remain visible.
-Stored derived text and match offsets remain unchanged. Rendering and **Copy context**
-use an optional display representation. If a chunk cannot be reconstructed independently,
-its original spacing remains visible.
+Display text removes the second line break only for verified original CRLF pairs. It
+also recognizes pairs split across output events. A verified CRCRLF sequence hides the
+redundant CR. Literal blank lines remain visible. Forward verification respects the
+recording cutoff. Stored derived text and match offsets remain unchanged. Rendering and
+**Copy context** use an optional display representation. If a chunk cannot be
+reconstructed independently, its original spacing remains visible.
 
 The dialog labels its content as **Derived terminal output**. Search uses recorded text,
 including output no longer present in the final screen or scrollback. Redraws can repeat
-text, and cursor movement can omit spaces. This view is not an exact conversation transcript.
-Input events, unsent drafts, and attachment contents are outside this search.
+text, and cursor movement can omit spaces. This view is not an exact conversation
+transcript. Input events, unsent drafts, and attachment contents are outside this
+search.
 
 A browser check with a synthetic terminal confirmed live reattachment, switching
 sessions, stop followed by history reload, and page reload at a different window width.
@@ -909,11 +917,11 @@ interruption recovery or serving requests. A pinned SQLite connection uses
 `BEGIN IMMEDIATE` to serialize the version read and all pending migrations.
 
 `PRAGMA user_version` tracks the last applied format. Scripts and version changes commit
-as one transaction after column and foreign-key checks. Any failure rolls back the
-entire upgrade and stops startup. A failed SQL step reports its migration number. WAL is
-enabled after the schema transaction commits.
+as one transaction after column, index, and foreign-key checks. Any failure rolls back
+the entire upgrade and stops startup. A failed SQL step reports its migration number.
+WAL is enabled after the schema transaction commits.
 
-- Empty databases run the format 3 baseline, then migrations 4, 5, and 6.
+- Empty databases run the format 3 baseline, then migrations 4 through 7.
 - Format 3, shipped in v0.0.1, gains projects and a nullable session project reference.
   Existing sessions remain standalone, with their original workspace and history.
 - Format 4 gains settings, preparations, and managed worktree tables. Defaults use
@@ -921,8 +929,9 @@ enabled after the schema transaction commits.
   memberships remain intact.
 - Format 5 gains the `sessions.archived` flag through migration 6. Existing sessions
   start unarchived so normal listing and restoration preserve their prior visibility.
-- Format 6 opens without running scripts or rewriting archive flags, settings, or launch
-  metadata.
+- Format 6 gains indexes on run event sequences, nonempty output sequences, and start
+  events through migration 7. Existing records and allocated sequences remain unchanged.
+- Format 7 opens without running scripts or rewriting history, settings, or metadata.
 
 The upgrade preserves IDs, timestamps, event sequences, original blobs, text, drafts,
 and attachments. It also preserves the highest allocated event sequence. Migration
@@ -931,7 +940,7 @@ afterward. Repeated or concurrent opens see the committed version and skip compl
 steps.
 
 Formats 1 and 2 have no known migration path in this repository. They, nonempty
-unversioned databases, and formats newer than 6 are rejected without changing their
+unversioned databases, and formats newer than 7 are rejected without changing their
 schema or records. A newer format error asks for a newer executable. There is no
 downgrade path, external migration command, or automatic backup.
 
@@ -986,17 +995,25 @@ check leaves capture writable. Invalid requests and canceled reads fail explicit
 
 Limit fixtures cover more than 100,000 empty updates, nonempty-event and byte limits,
 continued scans, split matches at cursors, interleaved terminals, overlaps, and cutoff
-preservation. Legacy tool fixtures verify the first-terminal fallback. Disconnect fixtures
-verify cancellation and cleanup after a reply. Range fixtures verify project ordering
-without a temporary sort and matches across range boundaries. Deadline fixtures reject
-unchanged continuation cursors. Display fixtures preserve original bytes and offsets,
-CRLF pairs across events, and intentional blank lines.
+preservation. Query plans verify indexed run bounds and start events without a session
+event scan. Unused-run fixtures keep unrelated oversized metadata outside a search.
+
+Legacy tool fixtures verify the first-terminal fallback. Disconnect fixtures verify
+cancellation and cleanup after a reply. Range fixtures verify project ordering without a
+temporary sort and matches across range boundaries. Deadline fixtures reject unchanged
+continuation cursors. Display fixtures preserve original bytes and offsets, CRLF pairs
+across events, and intentional blank lines.
 
 Frontend fixtures verify oldest-first page appends, plain-text rendering of markup, and
 explicit scope changes. They also verify rejection of stale search and context replies.
 A real temporary server check searches two synthetic shell terminals while the latest
 terminal remains writable. It reads earlier context, archives the session, restarts the
 server, and searches the same recordings again. No real agent CLI is used.
+
+A compiled server upgraded an 8.5-million-event synthetic archive from format 6 to 7.
+Search pagination, context, terminal lists, and newest-result reads passed. Reopen checks
+preserved event counts, sequence allocation, and original byte lengths. The temporary
+server was stopped. No user archive or real agent was used.
 
 A browser check with synthetic history verified session, project, and all-session scopes.
 It verified archived results, oldest-first pagination, context expansion, case matching,
@@ -1102,13 +1119,13 @@ launch in a worktree, and separate drafts for subsequent sessions.
 
 No real agent CLI was used for these project checks.
 
-Frozen schemas from repository history test formats 3–5 upgrades and unchanged format 6
-reopening. Fixtures compare stored records, original blobs, archive flags, metadata, and
-event allocation state. They test rollback of the entire upgrade after SQL, schema, or
-foreign-key failures. They also cover repeated opens, concurrent upgrades, and
-unsupported formats. Server subprocess fixtures test migration before queries,
-interruption recovery, and restart without duplicate notices. These checks use temporary
-synthetic databases.
+Frozen schemas from repository history test formats 3–6 upgrades to format 7 and
+unchanged format 7 reopening. Fixtures compare stored records, original blobs, archive
+flags, metadata, and event allocation state. They test rollback of the entire upgrade
+after SQL, schema, or foreign-key failures. They also cover repeated opens, concurrent
+upgrades, and unsupported formats. Server subprocess fixtures test migration before
+queries, interruption recovery, and restart without duplicate notices. These checks use
+temporary synthetic databases.
 
 A compiled release binary also passed startup, SQL queries, restart, and shutdown with
 temporary format 3–6 fixtures, running outside the repository. Checks confirmed format

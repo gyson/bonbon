@@ -131,11 +131,7 @@ type RunRecord struct {
 // Runs returns the runs of a session in start order. A session has one live run at most.
 // Later runs continue the same session in a new terminal.
 func (s *Store) Runs(sid string) ([]RunRecord, error) {
-	rows, err := s.db.Query(`SELECT runs.id,runs.session_id,status,started,ended,pid,detail,
-        COALESCE(MIN(events.seq),0),COALESCE(MAX(events.seq),0),
-        COALESCE((SELECT data FROM events WHERE session_id=runs.session_id AND run_id=runs.id AND kind='start' ORDER BY seq LIMIT 1),x'')
-        FROM runs LEFT JOIN events ON events.session_id=runs.session_id AND events.run_id=runs.id
-        WHERE runs.session_id=? GROUP BY runs.id ORDER BY runs.rowid`, sid)
+	rows, err := s.db.Query(runsSQL, sid)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +147,12 @@ func (s *Store) Runs(sid string) ([]RunRecord, error) {
 	return result, rows.Err()
 }
 
+const runsSQL = `SELECT runs.id,runs.session_id,status,started,ended,pid,detail,
+        COALESCE((SELECT seq FROM events WHERE run_id=runs.id AND session_id=runs.session_id ORDER BY seq LIMIT 1),0),
+        COALESCE((SELECT seq FROM events WHERE run_id=runs.id AND session_id=runs.session_id ORDER BY seq DESC LIMIT 1),0),
+        COALESCE((SELECT data FROM events WHERE run_id=runs.id AND session_id=runs.session_id AND kind='start' ORDER BY seq LIMIT 1),x'')
+        FROM runs WHERE session_id=? ORDER BY rowid`
+
 // RunStart is one run of a session and the data of its start event. Start is empty when
 // the run has no start event.
 type RunStart struct {
@@ -158,51 +160,27 @@ type RunStart struct {
 	Start []byte
 }
 
-// RunStarts returns the runs of a session in start order with their start events. It
-// reads the events of the session once, so it costs less than Runs in a long session.
+// RunStarts lists runs in start order. Each start event uses an indexed run lookup.
 func (s *Store) RunStarts(sid string) ([]RunStart, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	rows, err := tx.Query("SELECT "+runColumns+" FROM runs WHERE session_id=? ORDER BY rowid", sid)
-	if err != nil {
-		return nil, err
-	}
-	var result []RunStart
-	index := map[string]int{}
-	for rows.Next() {
-		run, err := scanRun(rows)
-		if err != nil {
-			rows.Close()
-			return nil, err
-		}
-		index[run.ID] = len(result)
-		result = append(result, RunStart{Run: run})
-	}
-	if err = errors.Join(rows.Err(), rows.Close()); err != nil {
-		return nil, err
-	}
-	rows, err = tx.Query("SELECT run_id,data FROM events WHERE session_id=? AND kind='start' ORDER BY seq", sid)
+	rows, err := s.db.Query(runStartsSQL, sid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	var result []RunStart
 	for rows.Next() {
-		var id string
-		var data []byte
-		if err = rows.Scan(&id, &data); err != nil {
+		var run RunStart
+		if err := rows.Scan(&run.ID, &run.SessionID, &run.Status, &run.Started, &run.Ended, &run.PID, &run.Detail, &run.Start); err != nil {
 			return nil, err
 		}
-		// Keep the first start event of each run.
-		if i, ok := index[id]; ok {
-			result[i].Start = data
-			delete(index, id)
-		}
+		result = append(result, run)
 	}
 	return result, rows.Err()
 }
+
+const runStartsSQL = `SELECT ` + runColumns + `,
+        COALESCE((SELECT data FROM events WHERE run_id=runs.id AND session_id=runs.session_id AND kind='start' ORDER BY seq LIMIT 1),x'')
+        FROM runs WHERE session_id=? ORDER BY rowid`
 
 // SessionRun returns one run of a session. It returns ErrRunNotFound when the session
 // has no run with this ID.

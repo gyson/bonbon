@@ -510,3 +510,106 @@ func TestHistorySearchDisplayKeepsUnverifiedChunkText(t *testing.T) {
 		t.Fatal(page, err)
 	}
 }
+
+func TestHistoryRunReadsUseIndexesWithoutSessionEventAggregation(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	event := searchOutput(t, s, run, "needle")
+	for _, test := range []struct {
+		query, index string
+		args         []any
+	}{
+		{outputBoundSQL + " ORDER BY seq LIMIT 1", "events_output_run", []any{run.ID, session.ID, event.Seq}},
+		{outputBoundSQL + " ORDER BY seq DESC LIMIT 1", "events_output_run", []any{run.ID, session.ID, event.Seq}},
+		{startEventSQL + " AND seq<=? ORDER BY seq LIMIT 1", "events_start_run", []any{run.ID, session.ID, event.Seq}},
+		{runsSQL, "events_run", []any{session.ID}},
+		{runStartsSQL, "events_start_run", []any{session.ID}},
+	} {
+		rows, err := s.db.Query("EXPLAIN QUERY PLAN "+test.query, test.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan = append(plan, detail)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(plan, "; ")
+		if !strings.Contains(joined, test.index) || strings.Contains(joined, "events_session") || strings.Contains(joined, "TEMP B-TREE") {
+			t.Fatal(joined)
+		}
+	}
+}
+
+func TestHistorySearchDoesNotReadUnusedRunMetadata(t *testing.T) {
+	s := testStore(t)
+	session := create(t, s)
+	own := searchRun(t, s, session.ID)
+	searchOutput(t, s, own, "needle")
+	other, err := s.NewRun(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(session.ID, other.ID, "start", []byte(strings.Repeat("x", 2<<20)), ""); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 || page.Matches[0].Tool != "Fixture" {
+		t.Fatal(page, err)
+	}
+	if _, err := s.SearchContext(context.Background(), ContextRequest{Anchor: page.Matches[0].Anchor, Before: 120, After: 180}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHistoryDisplayCRCRLFAcrossEventsPreservesParagraphsAndCutoff(t *testing.T) {
+	for _, chunks := range [][]string{
+		{"cmd\r\r\noutput\r\n\r\nparagraph\n\nend"},
+		{"cmd\r", "\r\noutput\r\n\r\nparagraph\n\nend"},
+		{"cmd\r\r", "\noutput\r\n\r\nparagraph\n\nend"},
+		{"cmd\r", "\r", "\noutput\r\n\r\nparagraph\n\nend"},
+	} {
+		s := testStore(t)
+		session := create(t, s)
+		run := searchRun(t, s, session.ID)
+		var parser Text
+		for _, raw := range chunks {
+			if _, err := s.Append(session.ID, run.ID, "output", []byte(raw), parser.Push([]byte(raw))); err != nil {
+				t.Fatal(err)
+			}
+		}
+		page, err := s.Search(context.Background(), SearchFilter{Query: "cmd", Session: session.ID})
+		if err != nil || len(page.Matches) != 1 || page.Matches[0].Context.Display == nil || page.Matches[0].Context.Display.After != "\noutput\n\nparagraph\n\nend" {
+			t.Fatal(chunks, page, err)
+		}
+	}
+	s := testStore(t)
+	session := create(t, s)
+	run := searchRun(t, s, session.ID)
+	var parser Text
+	raw := []byte("needle\r\r")
+	if _, err := s.Append(session.ID, run.ID, "output", raw, parser.Push(raw)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Search(context.Background(), SearchFilter{Query: "needle", Session: session.ID})
+	if err != nil || len(page.Matches) != 1 {
+		t.Fatal(page, err)
+	}
+	if _, err := s.Append(session.ID, run.ID, "output", []byte("\n"), parser.Push([]byte("\n"))); err != nil {
+		t.Fatal(err)
+	}
+	text, err := s.SearchContext(context.Background(), ContextRequest{Anchor: page.Matches[0].Anchor, Before: 120, After: 180})
+	if err != nil || text.After != "\n\n" || text.Display != nil {
+		t.Fatal("display read beyond cutoff", text, err)
+	}
+}

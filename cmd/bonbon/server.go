@@ -161,7 +161,7 @@ func startServer(target client.Target, noMenu bool) error {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); {
 		select {
 		case err := <-done:
 			return fmt.Errorf("server failed to start (%v); see %s", err, logPath)

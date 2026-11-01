@@ -13,7 +13,7 @@ import (
 )
 
 type searchRunInfo struct {
-	first, last, start     int64
+	first, last            int64
 	number                 int
 	title, workspace, tool string
 }
@@ -24,83 +24,73 @@ type searchReader struct {
 	sessions map[string]map[string]*searchRunInfo
 }
 
-// Cache metadata and output bounds after one event scan per session in this request.
+// Cache only requested runs. Bounds and start events use the format 7 run indexes.
 func (r *searchReader) run(sid, rid string) (*searchRunInfo, error) {
 	if r.sessions == nil {
 		r.sessions = map[string]map[string]*searchRunInfo{}
 	}
-	runs, ok := r.sessions[sid]
-	if !ok {
-		stmt, err := searchStatement(r.conn, `SELECT s.title,s.workspace,COALESCE(p.data,'{}')
-            FROM sessions s LEFT JOIN preparations p ON p.session_id=s.id WHERE s.id=?`, sid)
-		if err != nil {
-			return nil, err
-		}
-		if !stmt.Step() {
-			err = errors.Join(ErrNotFound, stmt.Err())
-			stmt.Close()
-			return nil, err
-		}
-		title, workspace := stmt.ColumnText(0), stmt.ColumnText(1)
-		var preparation Preparation
-		json.Unmarshal([]byte(stmt.ColumnText(2)), &preparation)
-		stmt.Close()
-		stmt, err = searchStatement(r.conn, "SELECT id FROM runs WHERE session_id=? ORDER BY rowid", sid)
-		if err != nil {
-			return nil, err
-		}
+	runs := r.sessions[sid]
+	if runs == nil {
 		runs = map[string]*searchRunInfo{}
-		for stmt.Step() {
-			runs[stmt.ColumnText(0)] = &searchRunInfo{number: len(runs) + 1, title: title, workspace: workspace}
-		}
-		err = stmt.Err()
-		stmt.Close()
-		if err != nil {
-			return nil, err
-		}
-		stmt, err = searchStatement(r.conn, `SELECT run_id,
-            COALESCE(MIN(CASE WHEN kind='output' THEN seq END),0),
-            COALESCE(MAX(CASE WHEN kind='output' THEN seq END),0),
-            COALESCE(MIN(CASE WHEN kind='start' THEN seq END),0)
-            FROM events WHERE session_id=? AND seq<=?
-            AND (kind='start' OR (kind='output' AND text<>'')) GROUP BY run_id`, sid, r.through)
-		if err != nil {
-			return nil, err
-		}
-		for stmt.Step() {
-			if run := runs[stmt.ColumnText(0)]; run != nil {
-				run.first, run.last, run.start = stmt.ColumnInt64(1), stmt.ColumnInt64(2), stmt.ColumnInt64(3)
-			}
-		}
-		err = stmt.Err()
-		stmt.Close()
-		if err != nil {
-			return nil, err
-		}
-		for _, run := range runs {
-			stmt, err = searchStatement(r.conn, "SELECT data FROM events WHERE seq=?", run.start)
-			if err != nil {
-				return nil, err
-			}
-			var start []byte
-			if stmt.Step() {
-				start = stmt.ColumnBlob(0, nil)
-			}
-			err = stmt.Err()
-			stmt.Close()
-			if err != nil {
-				return nil, err
-			}
-			run.tool = RunTool(start, run.number == 1, &preparation)
-		}
 		r.sessions[sid] = runs
 	}
-	run := runs[rid]
-	if run == nil {
-		return nil, ErrRunNotFound
+	if run := runs[rid]; run != nil {
+		return run, nil
 	}
+	stmt, err := searchStatement(r.conn, `SELECT s.title,s.workspace,COALESCE(p.data,'{}'),
+        (SELECT count(*) FROM runs prior WHERE prior.session_id=r.session_id AND prior.rowid<=r.rowid)
+        FROM runs r JOIN sessions s ON s.id=r.session_id
+        LEFT JOIN preparations p ON p.session_id=s.id WHERE r.id=? AND r.session_id=?`, rid, sid)
+	if err != nil {
+		return nil, err
+	}
+	if !stmt.Step() {
+		err = errors.Join(ErrRunNotFound, stmt.Err())
+		stmt.Close()
+		return nil, err
+	}
+	run := &searchRunInfo{title: stmt.ColumnText(0), workspace: stmt.ColumnText(1), number: stmt.ColumnInt(3)}
+	var preparation Preparation
+	json.Unmarshal([]byte(stmt.ColumnText(2)), &preparation)
+	stmt.Close()
+	for _, bound := range []struct {
+		order  string
+		target *int64
+	}{{"ASC", &run.first}, {"DESC", &run.last}} {
+		stmt, err = searchStatement(r.conn, outputBoundSQL+" ORDER BY seq "+bound.order+" LIMIT 1", rid, sid, r.through)
+		if err != nil {
+			return nil, err
+		}
+		if stmt.Step() {
+			*bound.target = stmt.ColumnInt64(0)
+		}
+		err = stmt.Err()
+		stmt.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	stmt, err = searchStatement(r.conn, startEventSQL+" AND seq<=? ORDER BY seq LIMIT 1", rid, sid, r.through)
+	if err != nil {
+		return nil, err
+	}
+	var start []byte
+	if stmt.Step() {
+		start = stmt.ColumnBlob(0, nil)
+	}
+	err = stmt.Err()
+	stmt.Close()
+	if err != nil {
+		return nil, err
+	}
+	run.tool = RunTool(start, run.number == 1, &preparation)
+	runs[rid] = run
 	return run, nil
 }
+
+const outputBoundSQL = `SELECT seq FROM events WHERE run_id=? AND session_id=?
+    AND kind='output' AND text<>'' AND seq<=?`
+const startEventSQL = `SELECT data FROM events WHERE run_id=? AND session_id=? AND kind='start'`
 
 // before reads at most count characters, with source positions for matcher lookbehind.
 func (r *searchReader) before(sid, rid string, seq int64, offset, count int, first int64) ([]searchPosition, error) {
@@ -209,7 +199,7 @@ func (s *Store) SearchContext(ctx context.Context, request ContextRequest) (resu
 	}
 	result.After = string(right)
 	result.positions.after = rightPositions[a.Length : a.Length+len(right)]
-	(&searchDisplayReader{conn: conn}).normalize(a.Session, a.Run, &result)
+	(&searchDisplayReader{conn: conn, through: a.Through}).normalize(a.Session, a.Run, &result)
 	return result, nil
 }
 

@@ -11,8 +11,9 @@ import (
 type searchContextPositions struct{ before, match, after []searchPosition }
 
 type searchDisplayReader struct {
-	conn  *sqlite3.Conn
-	masks map[int64][]bool
+	conn    *sqlite3.Conn
+	through int64
+	masks   map[int64][]bool
 }
 
 // Snippet reads have their own small budget. They cannot discard a search page.
@@ -27,7 +28,7 @@ func (s *Store) searchSnippets(parent context.Context, page *SearchPage) {
 		return
 	}
 	defer conn.Close()
-	display := searchDisplayReader{conn: conn}
+	display := searchDisplayReader{conn: conn, through: page.Through}
 	for i := range page.Matches {
 		hit := &page.Matches[i]
 		text := &hit.Context
@@ -60,7 +61,7 @@ func (s *Store) searchSnippets(parent context.Context, page *SearchPage) {
 	}
 }
 
-// Preserve stored text and anchor offsets. Normalize only verified original CRLF pairs.
+// Preserve stored text and anchor offsets. Normalize only verified original CRLF and CRCRLF sequences.
 func (r *searchDisplayReader) normalize(sid, rid string, text *SearchContext) {
 	if r.masks == nil {
 		r.masks = map[int64][]bool{}
@@ -98,7 +99,7 @@ func (r *searchDisplayReader) mask(sid, rid string, seq int64) []bool {
 	raw, stored := stmt.ColumnBlob(0, nil), stmt.ColumnText(1)
 	stmt.Close()
 	previousCR := false
-	if len(raw) > 0 && raw[0] == '\n' {
+	if len(raw) > 0 && (raw[0] == '\n' || raw[0] == '\r') {
 		stmt, err = searchStatement(r.conn, `SELECT data FROM events WHERE session_id=? AND run_id=? AND kind='output' AND length(data)>0 AND seq<? ORDER BY seq DESC LIMIT 1`, sid, rid, seq)
 		if err != nil {
 			return nil
@@ -109,14 +110,37 @@ func (r *searchDisplayReader) mask(sid, rid string, seq int64) []bool {
 		}
 		stmt.Close()
 	}
+	// One following LF lets display verify a CRCRLF split at the event boundary.
+	extraLF := false
+	if len(raw) > 0 && raw[len(raw)-1] == '\r' {
+		stmt, err = searchStatement(r.conn, `SELECT data FROM events WHERE session_id=? AND run_id=? AND kind='output' AND length(data)>0 AND seq>? AND seq<=? ORDER BY seq LIMIT 1`, sid, rid, seq, r.through)
+		if err != nil {
+			return nil
+		}
+		if stmt.Step() {
+			data := stmt.ColumnBlob(0, nil)
+			extraLF = len(data) > 0 && data[0] == '\n'
+		}
+		stmt.Close()
+		if extraLF {
+			raw = append(raw, '\n')
+		}
+	}
 	if !previousCR && !bytes.Contains(raw, []byte("\r\n")) {
 		return nil
 	}
 	parser := Text{previousCR: previousCR}
 	derived, mask := parser.push(raw, true)
 	// A chunk can start inside an escape or UTF-8 sequence. Keep its text if replay differs.
-	if derived != stored {
+	expected := stored
+	if extraLF {
+		expected += "\n"
+	}
+	if derived != expected {
 		return nil
+	}
+	if extraLF {
+		mask = mask[:len(mask)-1]
 	}
 	return mask
 }

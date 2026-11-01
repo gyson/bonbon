@@ -18,7 +18,7 @@ func (p *Text) Push(data []byte) string {
 	return text
 }
 
-// The optional mask identifies only the LF of an original CRLF pair.
+// The optional mask identifies redundant characters in verified CRLF and CRCRLF sequences.
 func (p *Text) push(data []byte, display bool) (string, []bool) {
 	data = append(p.pending, data...)
 	p.pending = nil
@@ -32,6 +32,7 @@ func (p *Text) push(data []byte, display bool) (string, []bool) {
 		r, n := utf8.DecodeRune(data)
 		data = data[n:]
 		hide := p.previousCR && r == '\n'
+		repeatCRLF := p.previousCR && r == '\r' && len(data) > 0 && data[0] == '\n'
 		p.previousCR = r == '\r'
 		switch p.state {
 		case 'e':
@@ -73,7 +74,7 @@ func (p *Text) push(data []byte, display bool) (string, []bool) {
 			case r == '\r':
 				out.WriteByte('\n')
 				if display {
-					hidden = append(hidden, false)
+					hidden = append(hidden, repeatCRLF)
 				}
 			case r == '\n' || r == '\t' || r >= 32 && r != 127:
 				out.WriteRune(r)

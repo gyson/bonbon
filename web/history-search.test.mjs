@@ -146,7 +146,7 @@ test('an incomplete scan can continue with no matches and retains its cursor aft
   assert.match(nodes['history-status'].textContent, /No matching output/);
 });
 
-test('a stopped incomplete page hides continuation and uses the singular result label', async () => {
+test('a stopped incomplete page offers retry and uses the singular result label', async () => {
   const { nodes, pending, submit } = setup();
   submit('needle');
   pending[0].resolve({ matches: [hit(1)], through: 20, more: false, incomplete: true });
@@ -154,7 +154,8 @@ test('a stopped incomplete page hides continuation and uses the singular result 
   assert.match(nodes['history-status'].textContent, /1 result loaded/);
   assert.doesNotMatch(nodes['history-status'].textContent, /1 results/);
   assert.match(nodes['history-status'].textContent, /No progress/);
-  assert.equal(nodes['history-more'].hidden, true);
+  assert.equal(nodes['history-more'].hidden, false);
+  assert.equal(nodes['history-more'].textContent, 'Retry search');
 });
 
 test('rendering and copy use verified display spacing while source text remains available', async () => {
@@ -177,4 +178,26 @@ test('rendering and copy use verified display spacing while source text remains 
     if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
     else delete globalThis.navigator;
   }
+});
+
+
+test('retry after a stopped page retains the attempted cursor and recording cutoff', async () => {
+  const { nodes, pending, submit } = setup();
+  const cursor = { seq: 19, offset: 3 };
+  submit('needle');
+  pending[0].resolve({ matches: [hit(1)], through: 20, more: true, cursor });
+  await tick();
+  nodes['history-more'].onclick();
+  assert.deepEqual(pending[2].request.search.cursor, cursor);
+  pending[2].resolve({ matches: [], through: 20, more: false, incomplete: true });
+  await tick();
+  assert.equal(nodes['history-results'].children.length, 1);
+  assert.equal(nodes['history-more'].textContent, 'Retry search');
+  nodes['history-more'].onclick();
+  assert.deepEqual(pending[3].request.search.cursor, cursor);
+  assert.equal(pending[3].request.search.through, 20);
+  pending[3].resolve({ matches: [hit(2)], through: 20, more: false });
+  await tick();
+  assert.equal(nodes['history-results'].children.length, 2);
+  assert.equal(nodes['history-more'].hidden, true);
 });

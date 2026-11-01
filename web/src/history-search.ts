@@ -143,14 +143,14 @@ export class HistorySearch {
       const page = await this.send(server, { operation: 'history-search', search: filter }, controller.signal);
       if (generation !== this.generation) return;
       this.through = page.through;
-      this.cursor = page.cursor;
+      this.cursor = page.cursor ?? (page.incomplete ? filter.cursor : undefined);
       const first = this.hits.length;
       this.hits.push(...page.matches);
       page.matches.forEach((hit, i) => this.list.append(this.item(hit, first + i)));
-      this.more.hidden = !page.more;
-      this.more.textContent = page.incomplete ? 'Continue search' : 'Show more results';
+      this.more.hidden = !page.more && !page.incomplete;
+      this.more.textContent = page.incomplete ? (page.more ? 'Continue search' : 'Retry search') : 'Show more results';
       const count = `${this.hits.length} ${this.hits.length === 1 ? 'result' : 'results'}`;
-      this.message(page.incomplete ? `${count} loaded · Search incomplete · Oldest first. ${page.more ? 'Continue search to reach newer output.' : 'No progress before the time limit. Select a smaller scope or try again.'}` : this.hits.length ? `${count}${page.more ? ' loaded' : ''} · Oldest first`
+      this.message(page.incomplete ? `${count} loaded · Search incomplete · Oldest first. ${page.more ? 'Continue search to reach newer output.' : 'No progress before the time limit. Retry this page or select a smaller scope.'}` : this.hits.length ? `${count}${page.more ? ' loaded' : ''} · Oldest first`
         : 'No matching output. Try another search term or a broader scope.');
       if (this.selected < 0 && this.hits.length) this.select(0);
     } catch (error) {
